@@ -163,7 +163,7 @@ load_config = function() {
     return(read_config('config.toml', parse_toml))
 
   if (file_exists('config.yaml'))
-    return(read_config('config.yaml', yaml::yaml.load_file))
+    return(read_config('config.yaml', yaml_load_file))
 }
 
 check_config = function(config, f) {
@@ -221,6 +221,8 @@ parse_toml = function(
     if (no_file <- missing(f)) f = paste(x, collapse = '\n')
     return(RcppTOML::parseTOML(f, fromFile = !no_file))
   }
+  # remove comments
+  x = gsub('\\s+#.+', '', x)
   z = list()
   # arbitrary values
   r = '^([[:alnum:]]+?)\\s*=\\s*(.+)\\s*$'
@@ -444,6 +446,13 @@ yaml_load = function(x) yaml::yaml.load(
   )
 )
 
+# remove the three dashes in the YAML file before parsing it (the yaml package
+# cannot handle three dashes)
+yaml_load_file = function(f) {
+  x = paste(readUTF8(f), collapse = '\n')
+  x = gsub('^\\s*---\\s*|\\s*---\\s*$', '', x)
+  yaml::yaml.load(x)
+}
 
 # if YAML contains inline code, evaluate it and return the YAML
 fetch_yaml2 = function(f) {
@@ -581,8 +590,10 @@ args_string = function(...) {
   if (length(v) == 0) return('')
   if (any(unlist(lapply(v, length)) != 1)) stop('All argument values must be of length 1')
   m = names(v)
+  i = vapply(v, is.character, logical(1))
   v = as.character(v)
-  i = grep('\\s', v)  # quote values that contain spaces
+  i = i | grepl('\\s', v)  # quote values that contain spaces
+  i = i & !grepl('^".+"$', v)  # not already quoted
   v[i] = sprintf('"%s"', v[i])
   if (is.null(m)) {
     paste(v, collapse = ' ')
