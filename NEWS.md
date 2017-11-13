@@ -1,3 +1,9 @@
+# CHANGES IN blogdown VERSION 0.3
+
+## MAJOR CHANGES
+
+- The **later** package is a required dependency on Windows for `blogdown::serve_site()` now (#169).
+
 # CHANGES IN blogdown VERSION 0.2
 
 ## BUG FIXES
