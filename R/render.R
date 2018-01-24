@@ -89,13 +89,12 @@ build_rmds = function(files) {
     copy_output_yml(d)
     message('Rendering ', f)
     render_page(f)
-    x = readUTF8(out)
+    x = read_utf8(out)
     x = encode_paths(x, by_products(f, '_files'), d, base, to_md)
     if (to_md) {
-      writeUTF8(x, out)
+      write_utf8(x, out)
     } else {
       if (getOption('blogdown.widgetsID', TRUE)) x = clean_widget_html(x)
-      x = split_html_tokens(x, FALSE)$body
       prepend_yaml(f, out, x)
     }
   }
@@ -119,7 +118,12 @@ encode_paths = function(x, deps, parent, base = '/', to_md = FALSE) {
   if (!dir_exists(deps)) return(x)
   if (!grepl('/$', parent)) parent = paste0(parent, '/')
   deps = basename(deps)
-  if (!to_md) deps = encode_uri(deps)
+  need_encode = !to_md
+  if (need_encode) {
+    deps2 = encode_uri(deps)  # encode the path and see if it can be found in x
+    # on Unix, paths containing multibyte chars are always encoded by Pandoc
+    if (need_encode <- !is_windows() || any(grepl(deps2, x, fixed = TRUE))) deps = deps2
+  }
   # find the dependencies referenced in HTML
   r = paste0('(<img src|<script src|<link href)(=")(', deps, '/)')
 
@@ -139,23 +143,9 @@ encode_paths = function(x, deps, parent, base = '/', to_md = FALSE) {
   x2 = grep(r2, x, value = TRUE)
   if (length(x2) == 0) return(x)
   libs = unique(gsub(r2, '\\3\\4', unlist(regmatches(x2, gregexpr(r2, x2)))))
-  libs = file.path(parent, if (to_md) libs else decode_uri(libs))
+  libs = file.path(parent, if (need_encode) decode_uri(libs) else libs)
   x = gsub(r2, sprintf('\\1\\2%srmarkdown-libs/\\4/', base), x)
   to = file.path('static', 'rmarkdown-libs', basename(libs))
   dirs_rename(libs, to, clean = TRUE)
   x
-}
-
-
-split_html_tokens = function(x, extract_head = TRUE) {
-  i1 = grep('<!-- BLOGDOWN-HEAD -->', x)
-  i2 = grep('<!-- /BLOGDOWN-HEAD -->', x)
-  if (length(i1) * length(i2) != 1) return(list(body = x))
-  if (extract_head) {
-    i3 = (i1 + 1):(i2 - 1)
-    h = paste(x[i3], collapse = '\n')
-  } else {
-    i3 = h = NULL
-  }
-  list(body = x[-c(i1, i2, i3)], head = h)
 }

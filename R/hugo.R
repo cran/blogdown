@@ -42,7 +42,7 @@ theme_flag = function(config = load_config()) {
 
 change_config = function(name, value) {
   f = find_config()
-  x = readUTF8(f)
+  x = read_utf8(f)
   if (f == 'config.toml') {
     r = sprintf('^%s\\s*=.+', name)
     v = if (!is.na(value)) paste(name, value, sep = ' = ')
@@ -58,7 +58,7 @@ change_config = function(name, value) {
   } else {
     x = c(v, x)  # append new config and write out
   }
-  writeUTF8(x, f)
+  write_utf8(x, f)
   invisible(list(text = x0, file = f))
 }
 
@@ -100,7 +100,7 @@ new_site = function(
   if (!force) warning("The directory '", dir, "' is not empty")
   if (install_hugo) tryCatch(find_hugo(), error = function(e) install_hugo())
   if (hugo_cmd(
-    c('new site', shQuote(path.expand(dir)), if (force) '--force', '-f', format),
+    c('new', 'site', shQuote(path.expand(dir)), if (force) '--force', '-f', format),
     stdout = FALSE
   ) != 0) return(invisible())
 
