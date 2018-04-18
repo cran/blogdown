@@ -309,7 +309,7 @@ expand_grid = function(...) {
 }
 
 by_products = function(x, suffix = c('_files', '_cache', '.html')) {
-  sx = knitr:::sans_ext(x)
+  sx = xfun::sans_ext(x)
   if (length(suffix) == 1) return(paste0(sx, suffix))
   ma = expand_grid(suffix, sx)
   if (nrow(ma) > 0) paste0(ma[, 2], ma[, 1])
@@ -321,6 +321,10 @@ new_post_addin = function() {
 
 update_meta_addin = function() {
   sys.source(pkg_file('scripts', 'update_meta.R'))
+}
+
+insert_image_addin = function() {
+  sys.source(pkg_file('scripts', 'insert_image.R'))
 }
 
 rmd_pattern = '[.][Rr](md|markdown)$'

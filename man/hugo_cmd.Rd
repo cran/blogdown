@@ -18,16 +18,16 @@ hugo_version()
 hugo_build(local = FALSE)
 
 new_site(dir = ".", install_hugo = TRUE, format = "toml", 
-    sample = TRUE, theme = "yihui/hugo-lithium-theme", theme_example = TRUE, 
-    serve = interactive())
+    sample = TRUE, theme = "yihui/hugo-lithium", hostname = "github.com", 
+    theme_example = TRUE, serve = interactive())
 
 new_content(path, kind = "default", open = interactive())
 
 new_post(title, kind = "default", open = interactive(), 
     author = getOption("blogdown.author"), categories = NULL, 
     tags = NULL, date = Sys.Date(), file = NULL, slug = NULL, 
-    subdir = getOption("blogdown.subdir", "post"), ext = getOption("blogdown.ext", 
-        ".md"))
+    title_case = getOption("blogdown.title_case"), subdir = getOption("blogdown.subdir", 
+        "post"), ext = getOption("blogdown.ext", ".md"))
 
 hugo_convert(to = c("YAML", "TOML", "JSON"), unsafe = FALSE, 
     ...)
@@ -57,10 +57,15 @@ YAML instead of TOML.}
 default, but this function adds sample content by default).}
 
 \item{theme}{A Hugo theme on Github (a chararacter string of the form
-\code{user/repo}, and you can optionally sepecify a GIT branch or tag name
+\code{user/repo}, and you can optionally specify a GIT branch or tag name
 after \code{@}, i.e. \code{theme} can be of the form
-\code{user/repo@branch}). If \code{theme = NA}, no themes will be
-installed, and you have to manually install a theme.}
+\code{user/repo@branch}). You can also specify a full URL to the zip file of
+the theme. If \code{theme = NA}, no themes will be installed, and you have
+to manually install a theme.}
+
+\item{hostname}{Where to find the theme. Defaults to \code{github.com}; specify
+if you wish to use an instance of GitHub Enterprise. You can also specify the
+full URL of the zip file in \code{theme}, in which case this argument is ignored.}
 
 \item{theme_example}{Whether to copy the example in the \file{exampleSite}
 directory if it exists in the theme. Not all themes provide example sites.}
@@ -95,6 +100,11 @@ date.}
 generated from the filename by removing the date and filename extension,
 e.g., if \code{file = 'post/2015-07-23-hi-there.md'}, \code{slug} will be
 \code{hi-there}. Set \code{slug = ''} if you do not want it.}
+
+\item{title_case}{A function to convert the title to title case. If
+\code{TRUE}, the function is \code{tools::\link[tools]{toTitleCase}()}).
+This argument is not limited to title case conversion. You can provide an
+arbitrary R function to convert the title.}
 
 \item{subdir}{If specified (not \code{NULL}), the post will be generated
 under a subdirectory under \file{content/}. It can be a nested subdirectory

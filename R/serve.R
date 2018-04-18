@@ -39,7 +39,7 @@ serve_site = function(...) {
 
 server_ready = function(url) {
   !inherits(
-    knitr:::try_silent(suppressWarnings(readLines(url))), 'try-error'
+    xfun::try_silent(suppressWarnings(readLines(url))), 'try-error'
   )
 }
 
@@ -54,7 +54,7 @@ serve_it = function(
 
     if (!getOption('blogdown.generator.server', FALSE)) {
       if (is_windows() && getOption('servr.daemon', FALSE)) {
-        if (!knitr:::loadable('later')) stop(
+        if (!xfun::loadable('later')) stop(
           "Please install the 'later' package: install.packages('later')", call. = FALSE
         )
       }
@@ -71,7 +71,7 @@ serve_it = function(
       }, dir = '.', ...))
     }
 
-    if (!knitr:::loadable('processx') || !knitr:::loadable('later')) stop(
+    if (!xfun::loadable('processx') || !xfun::loadable('later')) stop(
       "Please install the packages 'processx' and 'later'", call. = FALSE
     )
     server = servr::server_config(...)
@@ -89,16 +89,23 @@ serve_it = function(
       if (proc_print(p1, c(FALSE, TRUE))) later::later(p1_print, intv)
     }
 
-    message('Waiting for the server to be initialized...')
+    message(
+      'Launching the server via the command:\n  ',
+      paste(c(cmd, cmd_args), collapse = ' ')
+    )
     i = 0
     repeat {
       Sys.sleep(1)
       if (server_ready(server$url)) break
       if (i >= getOption('blogdown.server.timeout', 30)) {
+        proc_print(p1)
+        cat('\n')
         p1$kill()
         stop(
           'It took more than ', i, ' seconds to launch the server. ',
           'There may be something wrong. The process has been killed.',
+          'If the site needs more time to be built and launched, set ',
+          'options(blogdown.server.timeout) to a larger value.',
           call. = FALSE
         )
       }

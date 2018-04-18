@@ -16,8 +16,20 @@
 #' executable for your operating system, especially if you are not on Windows or
 #' Mac or a major Linux distribution. When in doubt, read the Hugo documentation
 #' and install it by yourself: \url{https://gohugo.io}.
+#'
+#' If you want to install Hugo to a custom path, you can set the global option
+#' \code{blogdown.hugo.dir} to a directory to store the Hugo executable before
+#' you call \code{install_hugo()}, e.g., \code{options(blogdown.hugo.dir =
+#' '~/Downloads/hugo_0.20.1/')}. This may be useful for you to use a specific
+#' version of Hugo for a specific website. You can set this option per project.
+#' See \href{https://bookdown.org/yihui/blogdown/global-options.html}{Section
+#' 1.4 Global options} for details, or store a copy of Hugo on a USB Flash drive
+#' along with your website.
 #' @param version The Hugo version number, e.g., \code{0.26}; the special value
 #'   \code{latest} means the latest version (fetched from Github releases).
+#'   Alternatively, this argument can take a file path of the zip archive or
+#'   tarball of the Hugo installer that has already been downloaded from Github,
+#'   in which case it will not be downloaded again.
 #' @param use_brew Whether to use Homebrew (\url{https://brew.sh}) on macOS to
 #'   install Hugo (recommended if you have already installed Homebrew). Note
 #'   Homebrew will be automatically installed if it has not been installed when
@@ -35,6 +47,9 @@ install_hugo = function(
     return(invisible())
   }
 
+  local_file = if (grepl('[.](zip|tar[.]gz)$', version) && file.exists(version))
+    normalizePath(version)
+
   # in theory, should access the Github API using httr/jsonlite but this
   # poor-man's version may work as well
   if (version == 'latest') {
@@ -42,9 +57,20 @@ install_hugo = function(
     r = '^.*?releases/tag/v([0-9.]+)".*'
     version = gsub(r, '\\1', grep(r, h, value = TRUE)[1])
     message('The latest Hugo version is ', version)
-  } else if (use_brew) warning(
-    "when use_brew = TRUE, only the latest version of Hugo can be installed"
-  )
+  } else if (use_brew) {
+    if (is.null(local_file)) warning(
+      "when use_brew = TRUE, only the latest version of Hugo can be installed"
+    ) else {
+      warning(
+        "A local installer was provided through version='", local_file, "', ",
+        'so use_brew = TRUE was ignored.'
+      )
+      use_brew = FALSE
+    }
+  }
+
+  if (!is.null(local_file)) version = gsub('^hugo_([0-9.]+)_.*', '\\1', basename(local_file))
+
   version = gsub('^[vV]', '', version)  # pure version number
   version2 = as.numeric_version(version)
   bit = if (grepl('64', Sys.info()[['machine']])) '64bit' else '32bit'
@@ -54,8 +80,13 @@ install_hugo = function(
   unlink(sprintf('hugo_%s*', version), recursive = TRUE)
 
   download_zip = function(OS, type = 'zip') {
-    zipfile = sprintf('hugo_%s_%s-%s.%s', version, OS, bit, type)
-    download2(paste0(base, zipfile), zipfile, mode = 'wb')
+    if (is.null(local_file)) {
+      zipfile = sprintf('hugo_%s_%s-%s.%s', version, OS, bit, type)
+      download2(paste0(base, zipfile), zipfile, mode = 'wb')
+    } else {
+      zipfile = local_file
+      type = xfun::file_ext(local_file)
+    }
     switch(type, zip = utils::unzip(zipfile), tar.gz = {
       files = utils::untar(zipfile, list = TRUE)
       utils::untar(zipfile)
@@ -147,7 +178,7 @@ find_exec = function(cmd, dir, info = '') {
     if (utils::file_test("-x", path)) break else path = ''
   }
   path2 = Sys.which(cmd)
-  if (path == '') {
+  if (path == '' || xfun::same_path(path, path2)) {
     if (path2 == '') stop(
       cmd, ' not found. ', info, call. = FALSE
     )
@@ -156,7 +187,7 @@ find_exec = function(cmd, dir, info = '') {
     if (path2 != '') {
       warning(
         'Found ', cmd, ' at "', path, '" and "', path2, '". The former will be used. ',
-        "If you don't need the former, you may delete it."
+        "If you don't need both copies, you may delete/uninstall one."
       )
     }
   }

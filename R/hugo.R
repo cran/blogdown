@@ -76,10 +76,14 @@ change_config = function(name, value) {
 #' @param sample Whether to add sample content. Hugo creates an empty site by
 #'   default, but this function adds sample content by default).
 #' @param theme A Hugo theme on Github (a chararacter string of the form
-#'   \code{user/repo}, and you can optionally sepecify a GIT branch or tag name
+#'   \code{user/repo}, and you can optionally specify a GIT branch or tag name
 #'   after \code{@@}, i.e. \code{theme} can be of the form
-#'   \code{user/repo@@branch}). If \code{theme = NA}, no themes will be
-#'   installed, and you have to manually install a theme.
+#'   \code{user/repo@@branch}). You can also specify a full URL to the zip file of
+#'   the theme. If \code{theme = NA}, no themes will be installed, and you have
+#'   to manually install a theme.
+#' @param hostname Where to find the theme. Defaults to \code{github.com}; specify
+#'   if you wish to use an instance of GitHub Enterprise. You can also specify the
+#'   full URL of the zip file in \code{theme}, in which case this argument is ignored.
 #' @param theme_example Whether to copy the example in the \file{exampleSite}
 #'   directory if it exists in the theme. Not all themes provide example sites.
 #' @param serve Whether to start a local server to serve the site.
@@ -92,7 +96,8 @@ change_config = function(name, value) {
 #' if (interactive()) new_site()
 new_site = function(
   dir = '.', install_hugo = TRUE, format = 'toml', sample = TRUE,
-  theme = 'yihui/hugo-lithium-theme', theme_example = TRUE, serve = interactive()
+  theme = 'yihui/hugo-lithium', hostname = 'github.com', theme_example = TRUE,
+  serve = interactive()
 ) {
   files = grep('[.]Rproj$', list.files(dir), invert = TRUE, value = TRUE)
   files = setdiff(files, c('LICENSE', 'README', 'README.md'))
@@ -108,7 +113,7 @@ new_site = function(
   # remove Hugo's default archetype (I think draft: true is a confusing default)
   unlink(file.path('archetypes', 'default.md'))
   if (is.character(theme) && length(theme) == 1 && !is.na(theme))
-    install_theme(theme, theme_example)
+    install_theme(theme, theme_example, hostname = hostname)
 
   if (sample) {
     d = file.path('content', 'blog')
@@ -135,22 +140,32 @@ new_site = function(
 #' @param update_config Whether to update the \code{theme} option in the site
 #'   configurations.
 #' @export
-install_theme = function(theme, theme_example = FALSE, update_config = TRUE, force = FALSE) {
+install_theme = function(
+  theme, hostname = 'github.com', theme_example = FALSE, update_config = TRUE, force = FALSE
+) {
   r = '^([^/]+/[^/@]+)(@.+)?$'
-  if (!is.character(theme) || length(theme) != 1 || !grepl(r, theme)) {
-    warning("'theme' must be a character string of the form 'user/repo' or 'user/repo@branch'")
+  r_zip = "\\.zip$"
+  theme_is_url = grepl(r_zip, theme)
+  if (!is.character(theme) || length(theme) != 1 || (!grepl(r, theme) & !theme_is_url)) {
+    warning("'theme' must be a character string of the form 'user/repo' or 'user/repo@branch', or a full URL to the .zip file")
     return(invisible())
   }
   branch = sub('^@', '', gsub(r, '\\2', theme))
-  if (branch == '') branch = 'master'
+  if (branch == '' || theme_is_url) branch = 'master'
   theme = gsub(r, '\\1', theme)
   dir_create('themes')
   in_dir('themes', {
-    zipfile = sprintf('%s.zip', basename(theme))
-    download2(
-      sprintf('https://github.com/%s/archive/%s.zip', theme, branch), zipfile, mode = 'wb'
-    )
-    files = utils::unzip(zipfile)
+    if (theme_is_url) {
+      url = theme
+      zipfile = gsub(".+/(.+\\.zip)", "\\1", theme)
+    } else {
+      url = sprintf('https://%s/%s/archive/%s.zip', hostname, theme, branch)
+      zipfile = sprintf('%s.zip', basename(theme))
+    }
+    download2(url, zipfile, mode = 'wb')
+    tmpdir = basename(tempfile('', '.'))
+    on.exit(in_dir('themes', unlink(tmpdir, recursive = TRUE)))
+    files = utils::unzip(zipfile, exdir = tmpdir)
     zipdir = dirname(files)
     zipdir = zipdir[which.min(nchar(zipdir))]
     expdir = file.path(zipdir, 'exampleSite')
@@ -161,9 +176,11 @@ install_theme = function(theme, theme_example = FALSE, update_config = TRUE, for
     } else warning(
       "The theme has provided an example site. You should read the theme's documentation ",
       'and at least take a look at the config file config.toml of the example site, ',
-      'because not all Hugo themes work with any config files.'
+      'because not all Hugo themes work with any config files.', call. = FALSE
     )
-    newdir = gsub(sprintf('-%s$', branch), '', zipdir)
+    newdir = sub(tmpdir, '.', zipdir, fixed = TRUE)
+    newdir = gsub('-[a-f0-9]{12,40}$', '', newdir)
+    newdir = gsub(sprintf('-%s$', branch), '', newdir)
     if (!force && dir_exists(newdir)) stop(
       'The theme already exists. Try install_theme("', theme, '", force = TRUE) ',
       'after you read the help page ?blogdown::install_theme.', call. = FALSE
@@ -171,12 +188,12 @@ install_theme = function(theme, theme_example = FALSE, update_config = TRUE, for
     unlink(newdir, recursive = TRUE)
     file.rename(zipdir, newdir)
     unlink(zipfile)
+    theme = gsub('^[.][\\/]+', '', newdir)
   })
   if (update_config) {
-    change_config('theme', sprintf('"%s"', basename(theme)))
+    change_config('theme', sprintf('"%s"', theme))
   } else message(
-    "Do not forget to change the 'theme' option in '",
-    find_config(), "' to \"", basename(theme), '"'
+    "Do not forget to change the 'theme' option in '", find_config(), "' to \"", theme, '"'
   )
 }
 
@@ -190,9 +207,12 @@ install_theme = function(theme, theme_example = FALSE, update_config = TRUE, for
 #'   (e.g. a post or a page).
 new_content = function(path, kind = 'default', open = interactive()) {
   if (missing(kind)) kind = default_kind(path)
-  hugo_cmd(c('new', shQuote(path), c('-k', kind)))
-  file = content_file(path)
-  hugo_toYAML(file)
+  path2 = with_ext(path, '.md')
+  file  = content_file(path)
+  file2 = content_file(path2)
+  hugo_cmd(c('new', shQuote(path2), c('-k', kind)))
+  hugo_toYAML(file2)
+  file.rename(file2, file)
   if (open) open_file(file)
   file
 }
@@ -237,6 +257,10 @@ content_file = function(path) file.path(get_config('contentDir', 'content'), pat
 #'   generated from the filename by removing the date and filename extension,
 #'   e.g., if \code{file = 'post/2015-07-23-hi-there.md'}, \code{slug} will be
 #'   \code{hi-there}. Set \code{slug = ''} if you do not want it.
+#' @param title_case A function to convert the title to title case. If
+#'   \code{TRUE}, the function is \code{tools::\link[tools]{toTitleCase}()}).
+#'   This argument is not limited to title case conversion. You can provide an
+#'   arbitrary R function to convert the title.
 #' @param subdir If specified (not \code{NULL}), the post will be generated
 #'   under a subdirectory under \file{content/}. It can be a nested subdirectory
 #'   like \file{post/joe/}.
@@ -252,6 +276,7 @@ content_file = function(path) file.path(get_config('contentDir', 'content'), pat
 new_post = function(
   title, kind = 'default', open = interactive(), author = getOption('blogdown.author'),
   categories = NULL, tags = NULL, date = Sys.Date(), file = NULL, slug = NULL,
+  title_case = getOption('blogdown.title_case'),
   subdir = getOption('blogdown.subdir', 'post'), ext = getOption('blogdown.ext', '.md')
 ) {
   if (is.null(file)) file = post_filename(title, subdir, ext, date)
@@ -262,6 +287,8 @@ new_post = function(
   if (generator() == 'hugo') file = new_content(file, kind, FALSE) else {
     writeLines(c('---', '', '---'), file)
   }
+  if (isTRUE(title_case)) title_case = tools::toTitleCase
+  if (is.function(title_case)) title = title_case(title)
 
   do.call(modify_yaml, c(list(
     file, title = title, author = author, date = format(date), slug = slug,
