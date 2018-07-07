@@ -85,12 +85,16 @@ require_rebuild = function(html, rmd) {
 #' @param dir A directory path.
 #' @param force Whether to force building all Rmd files. By default, an Rmd file
 #'   is built only if it is newer than its output file(s).
+#' @param ignore A regular expression to match output filenames that should be
+#'   ignored when testing if the modification time of the Rmd source file is
+#'   newer than its output files.
 #' @export
-build_dir = function(dir = '.', force = FALSE) {
+build_dir = function(dir = '.', force = FALSE, ignore = '[.]Rproj$') {
   for (f in list_rmds(dir)) {
     render_it = function() render_page(f, 'render_rmarkdown.R')
     if (force) { render_it(); next }
     files = list.files(dirname(f), full.names = TRUE)
+    files = grep(ignore, files, value = TRUE, invert = TRUE)
     i = files == f  # should be only one in files matching f
     bases = with_ext(files, '')
     files = files[!i & bases == bases[i]]  # files with same basename as f (Rmd)
@@ -102,46 +106,15 @@ older_than = function(file1, file2) {
   !file_exists(file1) | file_test('-ot', file1, file2)
 }
 
-is_windows = function() .Platform$OS.type == 'windows'
-is_osx = function() Sys.info()[['sysname']] == 'Darwin'
-is_linux = function() Sys.info()[['sysname']] == 'Linux'
+is_windows = function() xfun::is_windows()
+is_osx = function() xfun::is_macos()
+is_linux = function() xfun::is_linux()
 
 is_rmarkdown = function(x) grepl('[.][Rr]markdown$', x)
 
 # build .Rmarkdown to .markdown, and .Rmd to .html
 output_file = function(file, md = is_rmarkdown(file)) {
   with_ext(file, ifelse(md, 'markdown', 'html'))
-}
-
-# adapted from webshot:::download_no_libcurl due to the fact that
-# download.file() cannot download Github release assets:
-# https://stat.ethz.ch/pipermail/r-devel/2016-June/072852.html
-download2 = function(url, ...) {
-  download = function(method = 'auto', extra = getOption('download.file.extra')) {
-    download.file(url, ..., method = method, extra = extra)
-  }
-  if (is_windows()) for (method in c('libcurl', 'wininet', 'auto')) {
-    if (!inherits(try(res <- download(method = method)), 'try-error') && res == 0) return(res)
-  }
-
-  R340 = getRversion() >= '3.4.0'
-  if (R340 && download() == 0) return(0L)
-  # if non-Windows, check for libcurl/curl/wget/lynx, call download.file with
-  # appropriate method
-  res = NA
-  if (Sys.which('curl') != '') {
-    # curl needs to add a -L option to follow redirects
-    if ((res <- download(method = 'curl', extra = '-L')) == 0) return(res)
-  }
-  if (Sys.which('wget') != '') {
-    if ((res <- download(method = 'wget')) == 0) return(res)
-  }
-  if (Sys.which('lynx') != '') {
-    if ((res <- download(method = 'lynx')) == 0) return(res)
-  }
-  if (is.na(res)) stop('no download method found (wget/curl/lynx)')
-
-  res
 }
 
 opts = knitr:::new_defaults()
@@ -221,8 +194,8 @@ parse_toml = function(
   f, x = read_utf8(f), strict = requireNamespace('RcppTOML', quietly = TRUE)
 ) {
   if (strict) {
-    if (no_file <- missing(f)) f = paste(x, collapse = '\n')
-    return(RcppTOML::parseTOML(f, fromFile = !no_file))
+    x = paste(x, collapse = '\n')
+    return(RcppTOML::parseTOML(x, fromFile = FALSE))
   }
   # remove comments
   x = gsub('\\s+#.+', '', x)
@@ -313,18 +286,6 @@ by_products = function(x, suffix = c('_files', '_cache', '.html')) {
   if (length(suffix) == 1) return(paste0(sx, suffix))
   ma = expand_grid(suffix, sx)
   if (nrow(ma) > 0) paste0(ma[, 2], ma[, 1])
-}
-
-new_post_addin = function() {
-  sys.source(pkg_file('scripts', 'new_post.R'))
-}
-
-update_meta_addin = function() {
-  sys.source(pkg_file('scripts', 'update_meta.R'))
-}
-
-insert_image_addin = function() {
-  sys.source(pkg_file('scripts', 'insert_image.R'))
 }
 
 rmd_pattern = '[.][Rr](md|markdown)$'
@@ -440,8 +401,7 @@ split_yaml_body = function(x) {
 # anotate seq type values because both single value and list values are
 # converted to vector by default
 yaml_load = function(x) yaml::yaml.load(
-  paste(x, collapse = '\n'),
-  handlers = list(
+  x, handlers = list(
     seq = function(x) {
       # continue coerce into vector because many places of code already assume this
       if (length(x) > 0) {
@@ -453,13 +413,7 @@ yaml_load = function(x) yaml::yaml.load(
   )
 )
 
-# remove the three dashes in the YAML file before parsing it (the yaml package
-# cannot handle three dashes)
-yaml_load_file = function(f) {
-  x = paste(read_utf8(f), collapse = '\n')
-  x = gsub('^\\s*---\\s*|\\s*---\\s*$', '', x)
-  yaml::yaml.load(x)
-}
+yaml_load_file = function(...) yaml::yaml.load_file(...)
 
 # if YAML contains inline code, evaluate it and return the YAML
 fetch_yaml2 = function(f) {
@@ -524,8 +478,8 @@ modify_yaml = function(
 }
 
 # prepend YAML of one file to another file
-prepend_yaml = function(from, to, body = read_utf8(to)) {
-  x = c(fetch_yaml2(from), '', body)
+prepend_yaml = function(from, to, body = read_utf8(to), callback = identity) {
+  x = c(callback(fetch_yaml2(from)), '', body)
   write_utf8(x, to)
 }
 
@@ -589,14 +543,7 @@ clean_widget_html = function(x) {
 }
 
 decode_uri = function(...) httpuv::decodeURIComponent(...)
-encode_uri = function(...) {
-  # httpuv <= 1.3.5 is buggy: https://github.com/rstudio/httpuv/issues/86
-  if (packageVersion('httpuv') > '1.3.5') {
-    httpuv::encodeURIComponent(...)
-  } else {
-    URLencode(...)
-  }
-}
+encode_uri = function(...) httpuv::encodeURIComponent(...)
 
 # convert arguments to a single string of the form "arg1=value1 arg2=value2 ..."
 args_string = function(...) {

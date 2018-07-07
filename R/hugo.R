@@ -162,7 +162,7 @@ install_theme = function(
       url = sprintf('https://%s/%s/archive/%s.zip', hostname, theme, branch)
       zipfile = sprintf('%s.zip', basename(theme))
     }
-    download2(url, zipfile, mode = 'wb')
+    xfun::download_file(url, zipfile, mode = 'wb')
     tmpdir = basename(tempfile('', '.'))
     on.exit(in_dir('themes', unlink(tmpdir, recursive = TRUE)))
     files = utils::unzip(zipfile, exdir = tmpdir)
@@ -210,7 +210,7 @@ new_content = function(path, kind = 'default', open = interactive()) {
   path2 = with_ext(path, '.md')
   file  = content_file(path)
   file2 = content_file(path2)
-  hugo_cmd(c('new', shQuote(path2), c('-k', kind)))
+  hugo_cmd(c('new', shQuote(path2), if (kind != '') c('-k', kind)))
   hugo_toYAML(file2)
   file.rename(file2, file)
   if (open) open_file(file)
@@ -234,7 +234,7 @@ hugo_toYAML = function(file) {
   file2 = file.path('content', basename(file))
   in_dir(tmp, {
     dir.create('content'); file.copy(file, file2)
-    writeLines('baseurl = "/"', 'config.toml')
+    writeLines(c('baseurl = "/"', 'builddrafts = true'), 'config.toml')
     hugo_convert(unsafe = TRUE)
     file.copy(file2, file, overwrite = TRUE)
   })
@@ -331,7 +331,8 @@ hugo_server_args = function(host, port) {
 #' These functions return Hugo shortcodes with the shortcode name and arguments
 #' you specify. The closing shortcode will be added only if the inner content is
 #' not empty. The function \code{shortcode_html()} is essentially
-#' \code{shortcode(.type = 'html')}.
+#' \code{shortcode(.type = 'html')}. The function \code{shortcodes()} is a
+#' vectorized version of \code{shortcode()}.
 #'
 #' These functions can be used in either \pkg{knitr} inline R expressions or
 #' code chunks. The returned character string is wrapped in
@@ -357,6 +358,7 @@ hugo_server_args = function(host, port) {
 #' @examples library(blogdown)
 #'
 #' shortcode('tweet', '1234567')
+#' shortcodes('tweet', as.character(1:5))  # multiple tweets
 #' shortcode('figure', src='/images/foo.png', alt='A nice figure')
 #' shortcode('highlight', 'bash', .content = 'echo hello world;')
 #'
@@ -380,4 +382,11 @@ shortcode = function(.name, ..., .content = NULL, .type = 'markdown') {
 #' @rdname shortcode
 shortcode_html = function(...) {
   shortcode(..., .type = 'html')
+}
+
+#' @param .sep The separator between two shortcodes (by default, a newline).
+#' @export
+#' @rdname shortcode
+shortcodes = function(..., .sep = '\n') {
+  htmltools::HTML(paste(mapply(shortcode, ...), collapse = .sep))
 }
