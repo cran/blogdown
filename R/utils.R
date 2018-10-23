@@ -190,12 +190,11 @@ site_root = function(...) {
 }
 
 # a simple parser that only reads top-level options unless RcppTOML is available
-parse_toml = function(
-  f, x = read_utf8(f), strict = requireNamespace('RcppTOML', quietly = TRUE)
-) {
+parse_toml = function(f, x = read_utf8(f), strict = xfun::loadable('RcppTOML')) {
   if (strict) {
     x = paste(x, collapse = '\n')
-    return(RcppTOML::parseTOML(x, fromFile = FALSE))
+    parser = getFromNamespace('parseTOML', 'RcppTOML')
+    return(parser(x, fromFile = FALSE))
   }
   # remove comments
   x = gsub('\\s+#.+', '', x)
@@ -258,11 +257,17 @@ post_filename = function(title, subdir, ext, date) {
   if (is.null(subdir) || subdir == '') subdir = '.'
   d = if (d == '.') subdir else file.path(subdir, d)
   d = gsub('/+$', '', d)
+  f = date_filename(f, date)
+  gsub('^([.]/)+', '', file.path(d, f))
+}
+
+date_filename = function(path, date, replace = FALSE) {
   if (length(date) == 0 || is.na(date)) date = ''
   date = format(date)
+  if (date == '') return(path)
   # FIXME: this \\d{4} will be problematic in about 8000 years
-  if (date != '' && !grepl('^\\d{4}-\\d{2}-\\d{2}-', f)) f = paste(date, f, sep = '-')
-  gsub('^([.]/)+', '', file.path(d, f))
+  if (grepl(r <- '^\\d{4}-\\d{2}-\\d{2}-', path) != replace) return(path)
+  paste(date, gsub(r, '', path), sep = '-')
 }
 
 # give a filename, return a slug by removing the date and extension

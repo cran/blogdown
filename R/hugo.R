@@ -27,6 +27,8 @@ hugo_version = function() {
 #'   via \code{hugo_build()} to build the site.
 hugo_build = function(local = FALSE) {
   config = load_config()
+  # Hugo 0.48 generates an ugly empty resources/ dir in the root dir
+  on.exit(bookdown:::clean_empty_dir('resources'), add = TRUE)
   hugo_cmd(c(
     if (local) c('-b', site_base_dir(), '-D', '-F'),
     '-d', shQuote(publish_dir(config)), theme_flag(config)
@@ -34,10 +36,15 @@ hugo_build = function(local = FALSE) {
 }
 
 theme_flag = function(config = load_config()) {
-  d = list.files(get_config('themesDir', 'themes', config))
-  d = if (length(d) > 0) d[1]
-  theme = getOption('blogdown.theme') %n% get_config('theme', d, config)
-  if (length(theme) == 1) c('-t', theme)
+  a = NULL
+  if (!is.null(d <- getOption('blogdown.themesDir'))) a = c('--themesDir', d) else {
+    d = get_config('themesDir', 'themes', config)
+  }
+  t = list.files(d)
+  t = if (length(t) > 0) t[1]
+  t = get_config('theme', t, config)
+  if (length(t) == 1) a = c(a, '-t', t)
+  a
 }
 
 change_config = function(name, value) {
@@ -74,7 +81,7 @@ change_config = function(name, value) {
 #'   of the new (R) Markdown file created by \code{new_content()} always uses
 #'   YAML instead of TOML.
 #' @param sample Whether to add sample content. Hugo creates an empty site by
-#'   default, but this function adds sample content by default).
+#'   default, but this function adds sample content by default.
 #' @param theme A Hugo theme on Github (a chararacter string of the form
 #'   \code{user/repo}, and you can optionally specify a GIT branch or tag name
 #'   after \code{@@}, i.e. \code{theme} can be of the form
@@ -112,8 +119,15 @@ new_site = function(
   owd = setwd(dir); on.exit(setwd(owd), add = TRUE)
   # remove Hugo's default archetype (I think draft: true is a confusing default)
   unlink(file.path('archetypes', 'default.md'))
+  # remove empty dirs
+  for (d in list.dirs(recursive = FALSE)) bookdown:::clean_empty_dir(d)
   if (is.character(theme) && length(theme) == 1 && !is.na(theme))
     install_theme(theme, theme_example, hostname = hostname)
+  # remove the .gitignore that ignores everything under static/:
+  # https://github.com/rstudio/blogdown/issues/320
+  if (file.exists(gitignore <- file.path('static', '.gitignore'))) {
+    if (any(xfun::read_utf8(gitignore) == '*')) unlink(gitignore)
+  }
 
   if (sample) {
     d = file.path('content', 'blog')
@@ -187,7 +201,7 @@ install_theme = function(
     )
     unlink(newdir, recursive = TRUE)
     file.rename(zipdir, newdir)
-    unlink(zipfile)
+    unlink(c(zipfile, file.path(newdir, '*.Rproj')))
     theme = gsub('^[.][\\/]+', '', newdir)
   })
   if (update_config) {
