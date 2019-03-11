@@ -29,6 +29,7 @@ hugo_build = function(local = FALSE) {
   config = load_config()
   # Hugo 0.48 generates an ugly empty resources/ dir in the root dir
   on.exit(bookdown:::clean_empty_dir('resources'), add = TRUE)
+  if (local) tweak_hugo_env()
   hugo_cmd(c(
     if (local) c('-b', site_base_dir(), '-D', '-F'),
     '-d', shQuote(publish_dir(config)), theme_flag(config)
@@ -187,6 +188,12 @@ install_theme = function(
     expdir = file.path(zipdir, 'exampleSite')
     if (dir_exists(expdir)) if (theme_example) {
       file.copy(list.files(expdir, full.names = TRUE), '../', recursive = TRUE)
+      # themes may use config/_default/config.toml, e.g. hugo-academic; we need
+      # to move this config to the root dir, because blogdown assumes the config
+      # file is under the root dir
+      if (file.exists(cfg <- file.path('..', 'config', '_default', 'config.toml'))) {
+        file.rename(cfg, '../config.toml')
+      }
       # remove the themesDir setting; it is unlikely that you need it
       in_dir('..', change_config('themesDir', NA))
     } else warning(
@@ -298,7 +305,7 @@ new_post = function(
   if (is.null(file)) file = post_filename(title, subdir, ext, date)
   file = trim_ws(file)  # trim (accidental) white spaces
   if (missing(kind)) kind = default_kind(file)
-  if (is.null(slug)) slug = post_slug(file)
+  if (is.null(slug) && auto_slug()) slug = post_slug(file)
   slug = trim_ws(slug)
   if (generator() == 'hugo') file = new_content(file, kind, FALSE) else {
     writeLines(c('---', '', '---'), file)

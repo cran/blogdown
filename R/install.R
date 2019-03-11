@@ -37,9 +37,11 @@
 #' @param force Whether to install Hugo even if it has already been installed.
 #'   This may be useful when upgrading Hugo (if you use Homebrew, run the
 #'   command \command{brew update && brew upgrade} instead).
+#' @param extended Whether to use extended version of Hugo that has SCSS/SASS support.
+#'   You only need the extended version if you want to edit SCSS/SASS.
 #' @export
 install_hugo = function(
-  version = 'latest', use_brew = Sys.which('brew') != '', force = FALSE
+  version = 'latest', use_brew = Sys.which('brew') != '', force = FALSE, extended = TRUE
 ) {
 
   if (Sys.which('hugo') != '' && !force) {
@@ -74,6 +76,13 @@ install_hugo = function(
   version = gsub('^[vV]', '', version)  # pure version number
   version2 = as.numeric_version(version)
   bit = if (grepl('64', Sys.info()[['machine']])) '64bit' else '32bit'
+  if (extended) {
+    if (bit != '64bit') stop('The extended version of Hugo is only available on 64-bit platforms')
+    if (version2 < '0.43') {
+      if (!missing(extended)) stop('Only Hugo >= v0.43 provides the extended version')
+      extended = FALSE
+    }
+  }
   base = sprintf('https://github.com/gohugoio/hugo/releases/download/v%s/', version)
   owd = setwd(tempdir())
   on.exit(setwd(owd), add = TRUE)
@@ -81,7 +90,9 @@ install_hugo = function(
 
   download_zip = function(OS, type = 'zip') {
     if (is.null(local_file)) {
-      zipfile = sprintf('hugo_%s_%s-%s.%s', version, OS, bit, type)
+      zipfile = sprintf(
+        'hugo_%s%s_%s-%s.%s', ifelse(extended, 'extended_', ''), version, OS, bit, type
+      )
       xfun::download_file(paste0(base, zipfile), zipfile, mode = 'wb')
     } else {
       zipfile = local_file
@@ -166,7 +177,7 @@ bin_paths = function(dir = 'Hugo', extra_path = getOption('blogdown.hugo.dir')) 
     path = '~/Library/Application Support'
     path = if (dir_exists(path)) file.path(path, dir)
   } else {
-    path = '~/bin'
+    path = c('~/bin', '/snap/bin', '/var/lib/snapd/snap/bin')
   }
   path = c(extra_path, path, pkg_file(dir, mustWork = FALSE))
   path
@@ -181,17 +192,13 @@ find_exec = function(cmd, dir, info = '') {
   }
   path2 = Sys.which(cmd)
   if (path == '' || xfun::same_path(path, path2)) {
-    if (path2 == '') stop(
-      cmd, ' not found. ', info, call. = FALSE
-    )
+    if (path2 == '') stop(cmd, ' not found. ', info, call. = FALSE)
     return(cmd)  # do not use the full path of the command
   } else {
-    if (path2 != '') {
-      warning(
-        'Found ', cmd, ' at "', path, '" and "', path2, '". The former will be used. ',
-        "If you don't need both copies, you may delete/uninstall one."
-      )
-    }
+    if (path2 != '') warning(
+      'Found ', cmd, ' at "', path, '" and "', path2, '". The former will be used. ',
+      "If you don't need both copies, you may delete/uninstall one."
+    )
   }
   normalizePath(path)
 }
@@ -199,16 +206,9 @@ find_exec = function(cmd, dir, info = '') {
 find_hugo = local({
   path = NULL  # cache the path to hugo
   function() {
-    if (is.null(path)) {
-      path <<- find_exec(
-        'hugo', 'Hugo', 'You can install it via blogdown::install_hugo()'
-      )
-      ver = hugo_version()
-      if (is.numeric_version(ver) && ver < '0.18') stop(
-        'Found Hugo at ', path, ' but the version is too low (', ver, '). ',
-        'You may try blogdown::update_hugo().'
-      )
-    }
+    if (is.null(path)) path <<- find_exec(
+      'hugo', 'Hugo', 'You can install it via blogdown::install_hugo()'
+    )
     path
   }
 })

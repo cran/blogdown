@@ -141,24 +141,16 @@ opts = knitr:::new_defaults()
 # read config file and cache the options (i.e. do not read again unless the config is newer)
 load_config = function() {
   config = opts$get('config')
-
+  owd = setwd(site_root()); on.exit(setwd(owd), add = TRUE)
+  f = find_config(); m = file.info(f)[, 'mtime']
   # read config only if it has been updated
-  read_config = function(f, parser) {
-    if (!is.null(time <- attr(config, 'config_time')) &&
-        time == file.info(f)[, 'mtime']) return(config)
-    config = parser(f)
-    attr(config, 'config_time') = file.info(f)[, 'mtime']
-    opts$set(config = config)
-    check_config(config, f)
-  }
-
-  find_config()
-
-  if (file_exists('config.toml'))
-    return(read_config('config.toml', parse_toml))
-
-  if (file_exists('config.yaml'))
-    return(read_config('config.yaml', yaml_load_file))
+  if (identical(attr(config, 'config_time'), m)) return(config)
+  parser = switch(f, 'config.toml' = parse_toml, 'config.yaml' = yaml_load_file)
+  config = parser(f)
+  attr(config, 'config_time') = m
+  attr(config, 'config_content') = read_utf8(f)
+  opts$set(config = config)
+  check_config(config, f)
 }
 
 # check if the user has configured Multilingual Mode for Hugo in config.toml
@@ -204,6 +196,7 @@ find_config = function(files = config_files, error = TRUE) {
 
 # figure out the possible root directory of the website
 site_root = function(config = config_files) {
+  if (!is.null(root <- opts$get('site_root'))) return(root)
   owd = getwd(); on.exit(setwd(owd), add = TRUE)
   paths = NULL
   while (length(find_config(config, error = FALSE)) == 0) {
@@ -215,7 +208,8 @@ site_root = function(config = config_files) {
     )
     setwd('..')
   }
-  getwd()
+  root = getwd(); opts$set(site_root = root)
+  root
 }
 
 # a simple parser that only reads top-level options unless RcppTOML is available
@@ -275,8 +269,11 @@ open_file = function(x) {
 }
 
 # produce a dash-separated filename by replacing non-alnum chars with -
-dash_filename = function(string, pattern = '[^[:alnum:]]+') {
-  tolower(gsub('^-+|-+$', '', gsub(pattern, '-', string)))
+dash_filename = function(
+  string, pattern = '[^[:alnum:]]+',
+  pre = getOption('blogdown.filename.pre_processor', identity)
+) {
+  tolower(gsub('^-+|-+$', '', gsub(pattern, '-', pre(string))))
 }
 
 # return a filename for a post based on title, date, etc
@@ -310,6 +307,14 @@ post_slug = function(x) {
   x = gsub('([.][[:alnum:]]+){1,2}$', '', x)
   if (basename(x) == 'index') x = dirname(x)
   trim_ws(gsub('^\\d{4}-\\d{2}-\\d{2}-', '', basename(x)))
+}
+
+auto_slug = function() {
+  if (!getOption('blogdown.new_bundle', FALSE)) return(TRUE)
+  cfg = load_config()
+  if (length(cfg[['permalinks']]) > 0) return(TRUE)
+  con = attr(cfg, 'config_content')
+  length(grep('permalinks', con)) > 0
 }
 
 trim_ws = function(x) gsub('^\\s+|\\s+$', '', x)
@@ -604,4 +609,24 @@ args_string = function(...) {
     if (any(m == '')) stop('All arguments must be either named or unnamed')
     paste(m, '=', v, sep = '', collapse = ' ')
   }
+}
+
+is_rstudio_server = local({
+  x = NULL
+  function() {
+    if (!is.null(x)) return(x)
+    x <<- tryCatch(
+      tolower(rstudioapi::versionInfo()$mode) == 'server',
+      error = function(e) FALSE
+    )
+  }
+})
+
+tweak_hugo_env = function() {
+  if (!is_rstudio_server()) return()
+  Sys.setenv(HUGO_RELATIVEURLS = 'true')
+  do.call(
+    on.exit, list(substitute(Sys.unsetenv('HUGO_RELATIVEURLS')), add = TRUE),
+    envir = parent.frame()
+  )
 }
