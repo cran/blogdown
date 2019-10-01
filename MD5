@@ -1,8 +1,8 @@
-bc29e152d69cbb998df59b03ae5759af *DESCRIPTION
+6f23d83eeddc0bdf7c9f4326d433ac1b *DESCRIPTION
 78a183503cfd881989e0badba4c9695f *NAMESPACE
-abdaa823a03806621f6bce1bf535619d *NEWS.md
+b54f56bc9190d29f677453eac8b93ef3 *NEWS.md
 90d788e5bc57dbb7b83130ae4730c707 *R/addin.R
-8d55c9255bf0afb8e1dd7bb9937d39b8 *R/clean.R
+702ee8709b6c617aa3d847605928c7c4 *R/clean.R
 79314a19f927680e741ae601a8fc8bce *R/format.R
 19191a0b3c327b018cc3abccfb1aa4af *R/hugo.R
 b4aa43d47a75956e3d8500501ae50e29 *R/install.R
@@ -36,4 +36,5 @@ b67de6336fc2990e792ecd4aaa93c542 *man/serve_site.Rd
 7032a54c0a6d3f02ef943339e5743bc3 *man/shortcode.Rd
 fa2cfade719b8c5e07da5a730e9fa8fe *tests/test-all.R
 b1e4e91b7e9e33634a824541c57a3740 *tests/testit/test-addin.R
-c023ae0563bfcc847d38a969a755184b *tests/testit/test-utils.R
+064c2a2f02291b0ce73b32b5ad6dcf01 *tests/testit/test-clean.R
+fb87699f02c92bb9e7912b5f85bd7d96 *tests/testit/test-utils.R
