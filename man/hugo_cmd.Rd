@@ -17,16 +17,35 @@ hugo_version()
 
 hugo_build(local = FALSE)
 
-new_site(dir = ".", install_hugo = TRUE, format = "toml", sample = TRUE, 
-    theme = "yihui/hugo-lithium", hostname = "github.com", theme_example = TRUE, 
-    empty_dirs = FALSE, to_yaml = TRUE, serve = interactive())
+new_site(
+  dir = ".",
+  install_hugo = TRUE,
+  format = "toml",
+  sample = TRUE,
+  theme = "yihui/hugo-lithium",
+  hostname = "github.com",
+  theme_example = TRUE,
+  empty_dirs = FALSE,
+  to_yaml = TRUE,
+  serve = interactive()
+)
 
 new_content(path, kind = "", open = interactive())
 
-new_post(title, kind = "", open = interactive(), author = getOption("blogdown.author"), 
-    categories = NULL, tags = NULL, date = Sys.Date(), file = NULL, slug = NULL, 
-    title_case = getOption("blogdown.title_case"), subdir = getOption("blogdown.subdir", 
-        "post"), ext = getOption("blogdown.ext", ".md"))
+new_post(
+  title,
+  kind = "",
+  open = interactive(),
+  author = getOption("blogdown.author"),
+  categories = NULL,
+  tags = NULL,
+  date = Sys.Date(),
+  file = NULL,
+  slug = NULL,
+  title_case = getOption("blogdown.title_case"),
+  subdir = getOption("blogdown.subdir", "post"),
+  ext = getOption("blogdown.ext", ".md")
+)
 
 hugo_convert(to = c("YAML", "TOML", "JSON"), unsafe = FALSE, ...)
 
@@ -76,7 +95,9 @@ directory if it exists in the theme. Not all themes provide example sites.}
 
 \item{path}{The path to the new file under the \file{content} directory.}
 
-\item{kind}{The content type to create.}
+\item{kind}{The content type to create, i.e., the Hugo archetype. If the
+archetype is a page bundle archetype, it should end with a slash, e.g.,
+\code{post/}.}
 
 \item{open}{Whether to open the new file after creating it. By default, it is
 opened in an interactive R session.}
