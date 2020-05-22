@@ -4,6 +4,8 @@
 \alias{shortcode}
 \alias{shortcode_html}
 \alias{shortcodes}
+\alias{shortcode_open}
+\alias{shortcode_close}
 \title{Helper functions to write Hugo shortcodes using the R syntax}
 \usage{
 shortcode(.name, ..., .content = NULL, .type = "markdown")
@@ -11,12 +13,16 @@ shortcode(.name, ..., .content = NULL, .type = "markdown")
 shortcode_html(...)
 
 shortcodes(..., .sep = "\\n")
+
+shortcode_open(...)
+
+shortcode_close(...)
 }
 \arguments{
 \item{.name}{The name of the shortcode.}
 
 \item{...}{All arguments of the shortcode (either all named, or all unnamed).
-The \code{...} argument of \code{shortcode_html()} is passed to
+The \code{...} arguments of all other functions are passed to
 \code{shortcode()}.}
 
 \item{.content}{The inner content for the shortcode.}
@@ -35,7 +41,10 @@ These functions return Hugo shortcodes with the shortcode name and arguments
 you specify. The closing shortcode will be added only if the inner content is
 not empty. The function \code{shortcode_html()} is essentially
 \code{shortcode(.type = 'html')}. The function \code{shortcodes()} is a
-vectorized version of \code{shortcode()}.
+vectorized version of \code{shortcode()}. The paired functions
+\code{shortcode_open()} and \code{shortcode_close()} provide an alternative
+method to open and close shortcodes, which allows inner content be processed
+safely by Pandoc (e.g., citation keys in the content).
 }
 \details{
 These functions can be used in either \pkg{knitr} inline R expressions or
@@ -49,6 +58,12 @@ shortcodes (e.g. \code{<} will be converted to \code{&lt;}).
 If your document is pure Markdown, you can use the Hugo syntax to write
 shortcodes, and there is no need to call these R functions.
 }
+\note{
+Since Hugo v0.60, Hugo has switched its default Markdown rendering
+  engine to Goldmark. One consequence is that shortcodes may fail to render.
+  You may enable the \code{unsafe} option in the configuration file:
+  \url{https://gohugo.io/getting-started/configuration-markup/#goldmark}.
+}
 \examples{
 library(blogdown)
 
@@ -58,6 +73,10 @@ shortcode("figure", src = "/images/foo.png", alt = "A nice figure")
 shortcode("highlight", "bash", .content = "echo hello world;")
 
 shortcode_html("myshortcode", .content = "My <strong>shortcode</strong>.")
+
+shortcode_open("figure", src = "/images/foo.png")
+# This inner text will be *processed* by Pandoc, @Smith2006
+shortcode_close("figure")
 }
 \references{
 \url{https://gohugo.io/extras/shortcodes/}

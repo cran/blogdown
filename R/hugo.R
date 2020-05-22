@@ -379,7 +379,10 @@ hugo_server_args = function(host, port) {
 #' you specify. The closing shortcode will be added only if the inner content is
 #' not empty. The function \code{shortcode_html()} is essentially
 #' \code{shortcode(.type = 'html')}. The function \code{shortcodes()} is a
-#' vectorized version of \code{shortcode()}.
+#' vectorized version of \code{shortcode()}. The paired functions
+#' \code{shortcode_open()} and \code{shortcode_close()} provide an alternative
+#' method to open and close shortcodes, which allows inner content be processed
+#' safely by Pandoc (e.g., citation keys in the content).
 #'
 #' These functions can be used in either \pkg{knitr} inline R expressions or
 #' code chunks. The returned character string is wrapped in
@@ -393,13 +396,17 @@ hugo_server_args = function(host, port) {
 #' shortcodes, and there is no need to call these R functions.
 #' @param .name The name of the shortcode.
 #' @param ... All arguments of the shortcode (either all named, or all unnamed).
-#'   The \code{...} argument of \code{shortcode_html()} is passed to
+#'   The \code{...} arguments of all other functions are passed to
 #'   \code{shortcode()}.
 #' @param .content The inner content for the shortcode.
 #' @param .type The type of the shortcode: \code{markdown} or \code{html}.
 #' @return A character string wrapped in \code{htmltools::HTML()};
 #'   \code{shortcode()} returns a string of the form \code{{{\% name args \%}}},
 #'   and \code{shortcode_html()} returns \code{{{< name args >}}}.
+#' @note Since Hugo v0.60, Hugo has switched its default Markdown rendering
+#'   engine to Goldmark. One consequence is that shortcodes may fail to render.
+#'   You may enable the \code{unsafe} option in the configuration file:
+#'   \url{https://gohugo.io/getting-started/configuration-markup/#goldmark}.
 #' @references \url{https://gohugo.io/extras/shortcodes/}
 #' @export
 #' @examples library(blogdown)
@@ -410,18 +417,13 @@ hugo_server_args = function(host, port) {
 #' shortcode('highlight', 'bash', .content = 'echo hello world;')
 #'
 #' shortcode_html('myshortcode', .content='My <strong>shortcode</strong>.')
+#'
+#' shortcode_open('figure', src='/images/foo.png')
+#' # This inner text will be *processed* by Pandoc, @Smith2006
+#' shortcode_close('figure')
 shortcode = function(.name, ..., .content = NULL, .type = 'markdown') {
-  is_html = match.arg(.type, c('markdown', 'html')) == 'html'
-  m = .name; x = paste(.content, collapse = '\n'); a = args_string(...)
-  if (a != '') a = paste('', a)
-  if (is_html) {
-    s1 = sprintf('{{< %s%s >}}', m, a)
-    s2 = sprintf('{{< /%s >}}', m)
-  } else {
-    s1 = sprintf('{{%% %s%s %%}}', m, a)
-    s2 = sprintf('{{%% /%s %%}}', m)
-  }
-  res = if (x == '') s1 else paste(s1, x, s2, sep = '\n')
+  res = shortcode_vector(.name, ..., .content = .content, .type = .type)
+  res = if (res[2] == '') res[1] else paste(res, collapse = '\n')
   htmltools::HTML(res)
 }
 
@@ -436,4 +438,34 @@ shortcode_html = function(...) {
 #' @rdname shortcode
 shortcodes = function(..., .sep = '\n') {
   htmltools::HTML(paste(mapply(shortcode, ...), collapse = .sep))
+}
+
+shortcode_vector = function(.name, ..., .content = NULL, .type = 'markdown') {
+  is_html = match.arg(.type, c('markdown', 'html')) == 'html'
+  m = .name; x = paste(.content, collapse = '\n'); a = args_string(...)
+  if (a != '') a = paste('', a)
+  if (is_html) {
+    s1 = sprintf('{{< %s%s >}}', m, a)
+    s2 = sprintf('{{< /%s >}}', m)
+  } else {
+    s1 = sprintf('{{%% %s%s %%}}', m, a)
+    s2 = sprintf('{{%% /%s %%}}', m)
+  }
+  c(s1, x, s2)
+}
+
+shortcode_tag = function(..., .index = 1) {
+  htmltools::HTML(shortcode_vector(...)[.index])
+}
+
+#' @export
+#' @rdname shortcode
+shortcode_open <- function(...) {
+  shortcode_tag(..., .index = 1)
+}
+
+#' @export
+#' @rdname shortcode
+shortcode_close <- function (...) {
+  shortcode_tag(..., .index = 3)
 }
