@@ -18,6 +18,15 @@ hugo_version = function() {
   cat(x, sep = '\n')
 }
 
+#' @param version A version number.
+#' @export
+#' @describeIn hugo_cmd Check if Hugo with a certain version or above is
+#'   available.
+#' @examples blogdown::hugo_available('1.2.3')
+hugo_available = function(version = '0.0.0') {
+  tryCatch(hugo_version() >= version, error = function(e) FALSE)
+}
+
 #' @param local Whether to build the site for local preview (if \code{TRUE}, all
 #'   drafts and future posts will also be built, and the site configuration
 #'   \code{baseurl} will be set to \code{/} temporarily).
@@ -98,12 +107,12 @@ change_config = function(name, value) {
 #' @param to_yaml Whether to convert the metadata of all posts to YAML.
 #' @param serve Whether to start a local server to serve the site.
 #' @references The full list of Hugo commands: \url{https://gohugo.io/commands},
-#'   and themes: \url{http://themes.gohugo.io}.
+#'   and themes: \url{https://themes.gohugo.io}.
 #' @export
 #' @describeIn hugo_cmd Create a new site (skeleton) via \command{hugo new
 #'   site}. The directory of the new site should be empty,
-#' @examples library(blogdown)
-#' if (interactive()) new_site()
+#' @examples
+#' if (interactive()) blogdown::new_site()
 new_site = function(
   dir = '.', install_hugo = TRUE, format = 'toml', sample = TRUE,
   theme = 'yihui/hugo-lithium', hostname = 'github.com', theme_example = TRUE,
@@ -113,7 +122,7 @@ new_site = function(
   files = setdiff(files, c('LICENSE', 'README', 'README.md'))
   force = length(files) == 0
   if (!force) warning("The directory '", dir, "' is not empty")
-  if (install_hugo) tryCatch(find_hugo(), error = function(e) install_hugo())
+  if (install_hugo && !hugo_available()) install_hugo()
   if (hugo_cmd(
     c('new', 'site', shQuote(path.expand(dir)), if (force) '--force', '-f', format),
     stdout = FALSE
@@ -135,10 +144,12 @@ new_site = function(
   if (sample) {
     d = file.path('content', 'blog')
     if (!dir_exists(d)) d = file.path('content', 'post')
+    f1 = pkg_file('resources', '2015-07-23-r-rmarkdown.Rmd')
+    if (use_bundle()) d = file.path(d, basename(xfun::sans_ext(f1)))
     dir_create(d)
-    file.copy(pkg_file('resources', '2015-07-23-r-rmarkdown.Rmd'), d)
-    if (interactive() && getOption('blogdown.open_sample', TRUE))
-      open_file(file.path(d, '2015-07-23-r-rmarkdown.Rmd'))
+    f2 = file.path(d, if (use_bundle()) 'index.Rmd' else basename(f1))
+    file.copy(f1, f2)
+    if (interactive() && getOption('blogdown.open_sample', TRUE)) open_file(f2)
   }
   if (!file.exists('index.Rmd'))
     writeLines(c('---', 'site: blogdown:::blogdown_site', '---'), 'index.Rmd')
@@ -150,7 +161,7 @@ new_site = function(
 #' Install a Hugo theme from Github
 #'
 #' Download the specified theme from Github and install to the \file{themes}
-#' directory. Available themes are listed at \url{http://themes.gohugo.io}.
+#' directory. Available themes are listed at \url{https://themes.gohugo.io}.
 #' @inheritParams new_site
 #' @param force Whether to override the existing theme of the same name. If you
 #'   have made changes to this existing theme, your changes will be lost when
@@ -177,6 +188,8 @@ install_theme = function(
   branch = sub('^@', '', gsub(r, '\\2', theme))
   if (branch == '' || theme_is_url) branch = 'master'
   theme = gsub(r, '\\1', theme)
+  # the hugo-academic theme has moved
+  if (theme == 'gcushen/hugo-academic') theme = 'wowchemy/starter-academic'
   dir_create('themes')
   in_dir('themes', {
     url = if (theme_is_url) theme else {
@@ -185,17 +198,20 @@ install_theme = function(
     zipfile = wd_tempfile(basename(url))
     xfun::download_file(url, zipfile, mode = 'wb')
     tmpdir = wd_tempfile()
-    on.exit(in_dir('themes', unlink(tmpdir, recursive = TRUE)))
+    on.exit(in_dir('themes', unlink(tmpdir, recursive = TRUE)), add = TRUE)
     if (grepl('[.]zip$', zipfile)) {
       files = utils::unzip(zipfile, exdir = tmpdir)
     } else {
       utils::untar(zipfile, exdir = tmpdir)
-      files = list.files(tmpdir, all.files = TRUE, recursive = TRUE, full.names = TRUE)
+      files = list_files(tmpdir, all.files = TRUE)
     }
     zipdir = dirname(files)
     zipdir = zipdir[which.min(nchar(zipdir))]
     expdir = file.path(zipdir, 'exampleSite')
     if (dir_exists(expdir)) if (theme_example) {
+      # post-process go.mod so that users don't need to install Go (it sounds
+      # unbelievable that a user needs to install Go just to use a Hugo theme)
+      download_modules(file.path(expdir, 'go.mod'))
       file.copy(list.files(expdir, full.names = TRUE), '../', recursive = TRUE)
       # themes may use config/_default/config.toml, e.g. hugo-academic; we need
       # to move this config to the root dir, because blogdown assumes the config
@@ -210,10 +226,16 @@ install_theme = function(
       'and at least take a look at the config file config.toml of the example site, ',
       'because not all Hugo themes work with any config files.', call. = FALSE
     )
+    # delete the images dir that contains thumbnail and screenshot of the theme
+    # (because they are only useful to themes.gohugo.io and not to users)
+    if (dir_exists(thndir <- file.path(zipdir, 'images'))) {
+      unlink(file.path(thndir, c('tn.png', 'screenshot.png')))
+      # TODO: xfun::del_empty_dir(thndir)
+    }
     # check the minimal version of Hugo required by the theme
     if (update_hugo && file.exists(theme_cfg <- file.path(zipdir, 'theme.toml'))) {
-      if (!is.null(minver <- parse_toml(theme_cfg)[['min_version']])) {
-        if (hugo_version() < minver) update_hugo()
+      if (!is.null(minver <- read_toml(theme_cfg)[['min_version']])) {
+        if (!hugo_available(minver)) update_hugo()
       }
     }
     newdir = sub(tmpdir, '.', zipdir, fixed = TRUE)
@@ -235,6 +257,39 @@ install_theme = function(
   )
 }
 
+# download Hugo modules with R, instead of Go/GIT, so users won't need to
+# install Go or GIT
+download_modules = function(mod) {
+  if (!file.exists(mod)) return()
+  x = read_utf8(mod)
+  r = '.*?\\b(github.com/([^/]+/[^/]+))/?([^[:space:]]*)\\s+(v[^-]+)-?([^[:space:]]*?-([[:xdigit:]]{12,}))?\\s*.*'
+  gzs = NULL; tmps = NULL  # gz files and temp dirs
+  on.exit(unlink(c(gzs, tmps), recursive = TRUE), add = TRUE)
+  # x is of the form: github.com/user/repo/folder v0.0.0-2020-e58ee0ffc576;
+  # elements matched by the regex above: 1. whole; 2. github.com/user/repo; 3.
+  # user/repo; 4. subfolder; 5. version (tag/branch); 6. date+sha; 7. sha
+  lapply(regmatches(x, regexec(r, x)), function(v) {
+    if (length(v) < 7) return()
+    url = sprintf('https://%s/archive/%s.tar.gz', v[2], if (v[7] == '') v[5] else v[7])
+    gz = paste0(gsub('/', '-', v[3]), '-', basename(url))
+    if (!file.exists(gz)) {
+      gzs <<- c(gzs, gz)
+      xfun::download_file(url, gz, mode = 'wb')
+    }
+    files = utils::untar(gz, list = TRUE)
+    if (length(files) == 0) return()
+    tmps <<- c(tmps, tmp <- wd_tempfile())
+    utils::untar(gz, exdir = tmp)
+    root = file.path(tmp, files[1])
+    if (v[4] != '') {
+      root = file.path(root, v[4])
+      v[2] = file.path(v[2], v[4])
+    }
+    dir_create(v[2])
+    file.copy(list.files(root, full.names = TRUE), v[2], recursive = TRUE)
+  })
+  unlink(xfun::with_ext(mod, c('.mod', '.sum')))
+}
 
 #' @param path The path to the new file under the \file{content} directory.
 #' @param kind The content type to create, i.e., the Hugo archetype. If the
@@ -256,7 +311,7 @@ new_content = function(path, kind = '', open = interactive()) {
     kind  = sub('/$', '', kind)
   }
   hugo_cmd(c('new', shQuote(path2), if (kind != '') c('-k', kind)))
-  hugo_toYAML(file2)
+  hugo_convert_one(file2)
   file.rename(file2, file)
   if (open) open_file(file)
   file
@@ -270,9 +325,16 @@ default_kind = function(path) {
   gsub('/.*', '', path)
 }
 
-# Hugo cannot convert a single file: https://github.com/gohugoio/hugo/issues/3632
-hugo_toYAML = function(file) {
-  if (identical(trim_ws(readLines(file, 1)), '---')) return()
+# a hack to convert the metadata of a .md post to YAML/TOML/JSON, since Hugo
+# cannot convert a single file: https://github.com/gohugoio/hugo/issues/3632
+hugo_convert_one = function(file, to = c('YAML', 'TOML', 'JSON')) {
+  if (length(x <- trim_ws(readLines(file, 1))) == 0 || all(x == '')) {
+    warning('The file ', file, ' seems to be empty')
+    return()
+  }
+  x = x[x != ''][1]
+  to = match.arg(to)
+  if (x == c(YAML = '---', TOML = '+++', JSON = '{')[to]) return()
   file = normalizePath(file)
   tmp = tempfile(); on.exit(unlink(tmp, recursive = TRUE), add = TRUE)
   dir.create(tmp)
@@ -280,7 +342,7 @@ hugo_toYAML = function(file) {
   in_dir(tmp, {
     dir.create('content'); file.copy(file, file2)
     writeLines(c('baseurl = "/"', 'builddrafts = true'), 'config.toml')
-    hugo_convert(unsafe = TRUE)
+    hugo_convert(to, unsafe = TRUE)
     file.copy(file2, file, overwrite = TRUE)
   })
 }
@@ -360,7 +422,7 @@ new_post = function(
 #'   different formats via \command{hugo convert}.
 hugo_convert = function(to = c('YAML', 'TOML', 'JSON'), unsafe = FALSE, ...) {
   to = match.arg(to)
-  hugo_cmd(c('convert', paste0('to', to), if (unsafe) '--unsafe', ...))
+  hugo_cmd(c('convert', paste0('to', to), if (unsafe) '--unsafe', ...), stdout = FALSE)
 }
 
 #' @param host,port The host IP address and port; see
@@ -373,8 +435,9 @@ hugo_server = function(host, port) {
 
 hugo_server_args = function(host, port) {
   c(
-    'server', '--bind', host, '-p', port,
-    getOption('blogdown.hugo.server', c('-D', '-F')), theme_flag()
+    'server', '--bind', host, '-p', port, theme_flag(), getOption('blogdown.hugo.server', c(
+      '-D', '-F', if (hugo_available('0.25')) '--navigateToChanged'
+    ))
   )
 }
 
@@ -473,4 +536,63 @@ shortcode_open <- function(...) {
 #' @rdname shortcode
 shortcode_close <- function (...) {
   shortcode_tag(..., .index = 3)
+}
+
+#' Convert post files to leaf bundles
+#'
+#' For a post with the path \file{content/path/to/my-post.md}, it will be moved
+#' to \file{content/path/to/my-post/index.md}, so it becomes the index file of a
+#' leaf bundle of Hugo. This also applies to files with extensions \file{.Rmd}
+#' and \file{.Rmarkdown}.
+#' @param dir The root directory of the website project (should contain a
+#'   \file{content/} folder).
+#' @param output The output directory. If not provided, a suffix \file{-bundle}
+#'   is added to the website root directory name. For example, the default
+#'   output directory for the site under \file{~/Documents/test} is
+#'   \file{~/Documents/test-bundle}. You can specify the output directory to be
+#'   identical to the website root directory, so files will be moved within the
+#'   same directory, but please remember that you will not be able to undo
+#'   \code{bundle_site()}. You should modify the website in place \emph{only if
+#'   you have a backup for this directory or it is under version control}.
+#' @note This function only moves (R) Markdown source files. If these files use
+#'   resource files under the \file{static/} folder, these resources will not be
+#'   moved into the \file{content/} folder. You need to manually move them, and
+#'   adjust their paths in the (R) Markdown source files accordingly.
+#' @references Learn more about Hugo's leaf bundles at
+#'   \url{https://gohugo.io/content-management/page-bundles/}.
+#' @export
+#' @examples
+#' \dontrun{
+#' blogdown::bundle_site('.', '../new-site/')
+#' blogdown::bundle_site('.', '.')  # move files within the current working directory
+#' }
+bundle_site = function(dir = site_root(), output) {
+  if (!dir_exists(file.path(dir, 'content'))) stop(
+    "There must exist a 'content' directory under the website root directory."
+  )
+  dir = normalizePath(dir)
+  if (missing(output)) output = file.path(
+    dirname(dir), paste0(basename(dir), '-bundle')
+  )
+  if (!xfun::same_path(dir, output)) {
+    dir_create(output)
+    file.copy(
+      list_files(dir, recursive = FALSE, all.files = TRUE), output,
+      recursive = TRUE, overwrite = FALSE
+    )
+  }
+  files = list_files(file.path(output, 'content'), md_pattern)
+  bases = xfun::sans_ext(files)
+  i = !basename(bases) %in% c('index', '_index')
+  files = files[i]; bases = bases[i]
+  for (b in unique(bases)) dir_create(b)
+  files2 = file.path(bases, paste('index', xfun::file_ext(files), sep = '.'))
+  i = file.copy(files, files2)
+  if (any(i)) {
+    message(
+      'Moved these files into leaf bundles:\n\n',
+      paste('*', files[i], '->', files2[i], collapse = '\n')
+    )
+    unlink(files[i])
+  }
 }

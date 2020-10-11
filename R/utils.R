@@ -76,11 +76,16 @@ dirs_rename = function(from, to, ...) {
   for (i in seq_len(n)) dir_rename(from[i], to[i], ...)
 }
 
-# when html output file does not exist, or html is older than Rmd, or the first
-# line of the HTML is not --- (meaning it is not produced from build_rmds() but
-# possibly from clicking the Knit button)
-require_rebuild = function(html, rmd) {
-  older_than(html, rmd) || length(x <- readLines(html, n = 1)) == 0 || x != '---'
+# change the default of full.names and recursive in list.files() because these
+# values are used much more frequently than the original defaults
+list_files = function(..., full.names = TRUE, recursive = TRUE) {
+  list.files(..., full.names = full.names, recursive = recursive, no.. = TRUE)
+}
+
+# does html output file not exist, or is it older than Rmd for at least N seconds?
+require_rebuild = function(html, rmd, N = getOption('blogdown.time_diff', 0)) {
+  m1 = file.mtime(html); m2 = file.mtime(rmd)
+  !file_exists(html) | difftime(m2, m1, units = 'secs') > N
 }
 
 #' Build all Rmd files under a directory
@@ -103,31 +108,59 @@ build_dir = function(dir = '.', force = FALSE, ignore = '[.]Rproj$') {
     i = files == f  # should be only one in files matching f
     bases = with_ext(files, '')
     files = files[!i & bases == bases[i]]  # files with same basename as f (Rmd)
-    if (length(files) == 0 || any(older_than(files, f))) render_it()
+    if (length(files) == 0 || any(require_rebuild(files, f))) render_it()
   }
 }
 
-older_than = function(file1, file2) {
-  !file_exists(file1) | file_test('-ot', file1, file2)
-}
-
-# filter files by checking if their MD5 checksums have changed
-md5sum_filter = function(files) {
+#' Look for files that have been possibly modified
+#'
+#' Filter files by checking if their modification times or MD5 checksums have
+#' changed.
+#'
+#' The function \code{md5sum_filter()} reads the MD5 checksums of files from a
+#' database (a tab-separated text file), and returns the files of which the
+#' checksums have changed. If the database does not exist, write the checksums
+#' of files to it, otherwise update the checksums after the changed files have
+#' been identified. When a file is modified, its MD5 checksum is very likely to
+#' change.
+#'
+#' The function \code{timestamp_filer()} compares the modification time of an
+#' Rmd file with that of its output file, and returns a file if it's newer than
+#' its output file by \code{N} seconds (or if the output file does not exist),
+#' where \code{N} is obtained from the R global option
+#' \code{blogdown.time_diff}. By default, \code{N = 0}. You may change it via
+#' \code{options()}, e.g., \code{options(blogdown.time_diff = 5)} means an Rmd
+#' file will be returned when its modification time at least 5 seconds newer
+#' than its output file's modification time.
+#'
+#' These functions can be used to determine which Rmd files to be rebuilt in a
+#' \pkg{blogdown} website. See \code{\link{build_site}()} for more information.
+#' @param files A vector of file paths.
+#' @param db Path to the database file.
+#' @return Paths of files of which the checksums have changed.
+#' @export
+md5sum_filter = function(files, db = 'blogdown/md5sum.txt') {
   opt = options(stringsAsFactors = FALSE); on.exit(options(opt), add = TRUE)
   md5 = data.frame(file = files, checksum = tools::md5sum(files))  # new checksums
-  if (!file.exists(f <- 'blogdown/md5sum.txt')) {
-    dir_create('blogdown')
-    write.table(md5, f, row.names = FALSE)
+  if (!file.exists(db)) {
+    dir_create(dirname(db))
+    write.table(md5, db, row.names = FALSE)
     return(files)
   }
-  old = read.table(f, TRUE)  # old checksums (2 columns: file path and checksum)
+  old = read.table(db, TRUE)  # old checksums (2 columns: file path and checksum)
   one = merge(md5, old, 'file', all = TRUE, suffixes = c('', '.old'))
   # exclude files if checksums are not changed
   files = setdiff(files, one[one[, 2] == one[, 3], 'file'])
   i = is.na(one[, 2])
   one[i, 2] = one[i, 3]  # update checksums
-  write.table(one[, 1:2], f, row.names = FALSE)
+  write.table(one[, 1:2], db, row.names = FALSE)
   files
+}
+
+#' @rdname md5sum_filter
+#' @export
+timestamp_filter = function(files) {
+  files[require_rebuild(output_file(files), files)]
 }
 
 is_windows = function() xfun::is_windows()
@@ -155,7 +188,7 @@ load_config = function() {
   f = find_config(); m = file.info(f)[, 'mtime']
   # read config only if it has been updated
   if (identical(attr(config, 'config_time'), m)) return(config)
-  parser = switch(f, 'config.toml' = parse_toml, 'config.yaml' = yaml_load_file)
+  parser = switch(f, 'config.toml' = read_toml, 'config.yaml' = yaml_load_file)
   config = parser(f)
   attr(config, 'config_time') = m
   attr(config, 'config_content') = read_utf8(f)
@@ -168,6 +201,17 @@ check_lang = function(config = load_config()) {
   get_config('DefaultContentLanguage', NULL, config)
 }
 
+# a horizontal rule
+hrule = function(char = '-', width = getOption('width')) {
+  paste(rep('-', width), collapse = '')
+}
+
+message2 = function(...) {
+  message(hrule())
+  message(...)
+  message(hrule())
+}
+
 check_config = function(config, f) {
   base = config[['baseurl']]
   if (is_example_url(base)) {
@@ -178,11 +222,16 @@ check_config = function(config, f) {
       immediate. = TRUE, call. = FALSE
     )
   }
-  if (is.null(config[['ignoreFiles']])) warning(
-    'You are recommended to ignore certain files in ', f, ': set the option ignoreFiles',
-    if (grepl('[.]toml$', f)) ' = ' else ': ',
-    '["\\\\.Rmd$", "\\\\.Rmarkdown$", "_files$", "_cache$"]',
-    immediate. = TRUE, call. = FALSE
+  ignore = c('\\.Rmd$', '\\.Rmarkdown$', '_cache$', '\\.knit\\.md$', '\\.utf8\\.md$')
+  if (is.null(s <- config[['ignoreFiles']])) message2(
+    "You are recommended to set the 'ignoreFiles' field in ", f, ' to: ',
+    xfun::tojson(ignore)
+  ) else if (!all(ignore %in% s)) message2(
+    "You are recommended to ignore more items in the 'ignoreFiles' field in ", f, ": ",
+    gsub('^\\[|\\]$', '', xfun::tojson(I(setdiff(ignore, s))))
+  )
+  if ('_files$' %in% s) message2(
+    "You are recommended to remove the item '_files$' in the 'ignoreFiles' field in ", f, '.'
   )
   config
 }
@@ -193,10 +242,19 @@ is_example_url = function(url) {
   )
 }
 
-# only support TOML and YAML (no JSON)
-config_files = c('config.toml', 'config.yaml')
+generator = function() getOption('blogdown.generator', 'hugo')
 
-find_config = function(files = config_files, error = TRUE) {
+# config files for different site generators
+config_files = function(which = generator()) {
+  all = list(
+    hugo = c('config.toml', 'config.yaml'),  # only support TOML and YAML (no JSON)
+    jekyll = '_config.yml',
+    hexo = '_config.yml'
+  )
+  if (is.null(which)) all else all[[which]]
+}
+
+find_config = function(files = config_files(), error = TRUE) {
   f = existing_files(files, first = TRUE)
   if (length(f) == 0 && error) stop(
     'Cannot find the configuration file ', paste(files, collapse = ' | '), ' of the website'
@@ -205,7 +263,7 @@ find_config = function(files = config_files, error = TRUE) {
 }
 
 # figure out the possible root directory of the website
-site_root = function(config = config_files) {
+site_root = function(config = config_files()) {
   if (!is.null(root <- opts$get('site_root'))) return(root)
   owd = getwd(); on.exit(setwd(owd), add = TRUE)
   paths = NULL
@@ -222,12 +280,54 @@ site_root = function(config = config_files) {
   root
 }
 
-# a simple parser that only reads top-level options unless RcppTOML is available
-parse_toml = function(f, x = read_utf8(f), strict = xfun::loadable('RcppTOML')) {
+#' Read and write TOML data (Tom's Obvious Markup Language)
+#'
+#' The function \code{read_toml()} reads TOML data from a file or a character
+#' vector, and the function \code{write_toml()} converts an R object to TOML.
+#'
+#' For \code{read_toml()}, it first tries to use the R package \pkg{RcppTOML} to
+#' read the TOML data. If \pkg{RcppTOML} is not available, it uses Hugo to
+#' convert the TOML data to YAML, and reads the YAML data via the R package
+#' \pkg{yaml}. If Hugo is not available, it falls back to a naive parser, which
+#' is only able to parse top-level fields in the TOML data, and it only supports
+#' character, logical, and numeric (including integer) scalars.
+#'
+#' For \code{write_toml()}, it converts an R object to YAML via the R package
+#' \pkg{yaml}, and uses Hugo to convert the YAML data to TOML.
+#' @param file Path to an input (TOML or YAML) file.
+#' @param x For \code{read_toml()}, the TOML data as a character vector (it is
+#'   read from \code{file} by default; if provided, \code{file} will be
+#'   ignored). For \code{write_toml()}, an R object to be converted to TOML.
+#' @param strict Whether to try \pkg{RcppTOML} and Hugo only (i.e., not to use
+#'   the naive parser). If \code{FALSE}, only the naive parser is used (this is
+#'   not recommended, unless you are sure your TOML data is really simple).
+#' @return For \code{read_toml()}, an R object. For \code{write_toml()},
+#'   \code{toml2yaml()}, and \code{yaml2toml()}, a character vector (marked by
+#'   \code{xfun::\link{raw_string}()}) of the TOML/YAML data if \code{output =
+#'   NULL}, otherwise the TOML/YAML data is written to the output file.
+#' @export
+#' @examples
+#' \dontrun{
+#' v = blogdown::read_toml(x = c('a = 1', 'b = true', 'c = "Hello"', 'd = [1, 2]'))
+#' v
+#' blogdown::write_toml(v)
+#' }
+read_toml = function(file, x = read_utf8(file), strict = TRUE) {
   if (strict) {
-    x = paste(x, collapse = '\n')
-    parser = getFromNamespace('parseTOML', 'RcppTOML')
-    return(parser(x, fromFile = FALSE))
+    if (xfun::loadable('RcppTOML')) {
+      x = paste(x, collapse = '\n')
+      parser = getFromNamespace('parseTOML', 'RcppTOML')
+      return(parser(x, fromFile = FALSE))
+    }
+    if (hugo_available()) {
+      f2 = tempfile(fileext = '.md'); on.exit(unlink(f2), add = TRUE)
+      write_utf8(c('+++', x, '+++'), f2)
+      hugo_convert_one(f2)
+      return(yaml_load_file(f2))
+    }
+    if (!missing(strict)) stop(
+      'Cannot parse TOML data because neither Hugo nor the R package RcppTOML is available.'
+    )
   }
   # remove comments
   x = gsub('\\s+#.+', '', x)
@@ -253,6 +353,41 @@ parse_toml = function(f, x = read_utf8(f), strict = xfun::loadable('RcppTOML')) 
   })
   z
 }
+
+#' @param output Path to an output file. If \code{NULL}, the TOML data is
+#'   returned, otherwise the data is written to the specified file.
+#' @export
+#' @rdname read_toml
+write_toml = function(x, output = NULL) {
+  if (!hugo_available()) stop('Hugo is required but not found.')
+  f = tempfile(fileext = '.md'); on.exit(unlink(f), add = TRUE)
+  write_utf8(c('---', as.yaml(x), '---'), f)
+  hugo_convert_one(f, 'TOML')
+  x = trim_ws(read_utf8(f))
+  i = which(x == '+++')
+  if ((n <- length(i)) < 2)
+    stop('Wrong TOML data generated by Hugo:\n', paste(x, collapse = '\n'))
+  if (i[n] - i[1] <= 1) return('')
+  x = x[(i[1] + 1):(i[n] - 1)]
+  while((n <- length(x)) > 0 && x[n] == '') x = x[-n]  # remove empty lines at the end
+  if (is.null(output)) xfun::raw_string(x) else write_utf8(x, output)
+}
+
+#' @export
+#' @rdname read_toml
+toml2yaml = function(file, output = NULL) {
+  x = read_toml(file, strict = TRUE)
+  x = as.yaml(x)
+  if (is.null(output)) x else write_utf8(x, output)
+}
+
+#' @export
+#' @rdname read_toml
+yaml2toml = function(file, output = NULL) {
+  x = yaml_load_file(file)
+  write_toml(x, output)
+}
+
 
 # option names may be case insensitive
 get_config = function(field, default, config = load_config()) {
@@ -287,9 +422,7 @@ dash_filename = function(
 }
 
 # return a filename for a post based on title, date, etc
-post_filename = function(
-  title, subdir, ext, date, lang = '', bundle = getOption('blogdown.new_bundle', FALSE)
-) {
+post_filename = function(title, subdir, ext, date, lang = '', bundle = use_bundle()) {
   if (is.null(lang)) lang = ''
   file = dash_filename(title)
   d = dirname(file); f = basename(file)
@@ -319,8 +452,14 @@ post_slug = function(x) {
   trim_ws(gsub('^\\d{4}-\\d{2}-\\d{2}-', '', basename(x)))
 }
 
+use_bundle = function() {
+  getOption('blogdown.new_bundle', generator() == 'hugo' && hugo_available('0.32'))
+}
+
+# don't add slugs to posts when creating new posts as bundles and permalinks is
+# not set in config: https://github.com/rstudio/blogdown/issues/370
 auto_slug = function() {
-  if (!getOption('blogdown.new_bundle', FALSE)) return(TRUE)
+  if (!use_bundle()) return(TRUE)
   cfg = load_config()
   if (length(cfg[['permalinks']]) > 0) return(TRUE)
   con = attr(cfg, 'config_content')
@@ -353,7 +492,7 @@ scan_yaml = function(dir = 'content') {
   if (missing(dir)) dir = switch(generator(),
     hugo = 'content', jekyll = '.', hexo = 'source'
   )
-  files = list.files(dir, md_pattern, recursive = TRUE, full.names = TRUE)
+  files = list_files(dir, md_pattern)
   if (length(files) == 0) return(list())
   res = lapply(files, function(f) {
     yaml = fetch_yaml(f)
@@ -455,7 +594,7 @@ split_yaml_body = function(x) {
   res
 }
 
-# anotate seq type values because both single value and list values are
+# annotate seq type values because both single value and list values are
 # converted to vector by default
 yaml_load = function(x) yaml::yaml.load(
   x, handlers = list(
@@ -648,7 +787,7 @@ get_author = function() {
 
 get_subdirs = function() {
   owd = setwd(content_file()); on.exit(setwd(owd), add = TRUE)
-  files = list.files(full.names = TRUE, recursive = TRUE, include.dirs = TRUE)
+  files = list_files(include.dirs = TRUE)
   files = sub('^[.]/', '', files)
   i = file_test('-d', files)
   dirs = files[i]

@@ -20,11 +20,19 @@ dir_exists = bookdown:::dir_exists
 dir_create = bookdown:::dir_create
 existing_files = bookdown:::existing_files
 fetch_yaml = function(f) bookdown:::fetch_yaml(read_utf8(f))
-Rscript = bookdown:::Rscript
+Rscript = xfun::Rscript
 
 `%n%` = knitr:::`%n%`
 
 blogdown_skeleton = function(path, ...) {
   opts = options(blogdown.open_sample = FALSE); on.exit(options(opts), add = TRUE)
   new_site(dir = path, ..., serve = FALSE)
+}
+
+# stop all servers when the package is unloaded or R session is ended
+.onLoad = function(libname, pkgname) {
+  reg.finalizer(asNamespace(pkgname), function(e) {
+    opts$set(quitting = TRUE); on.exit(opts$set(quitting = NULL), add = TRUE)
+    stop_server()
+  }, onexit = TRUE)
 }

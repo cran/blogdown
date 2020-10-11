@@ -4,30 +4,45 @@
 \alias{build_site}
 \title{Build a website}
 \usage{
-build_site(local = FALSE, method = c("html", "custom"), run_hugo = TRUE)
+build_site(
+  local = FALSE,
+  method = c("html", "custom"),
+  run_hugo = TRUE,
+  build_rmd = FALSE
+)
 }
 \arguments{
-\item{local}{Whether to build the website locally to be served via
-\code{\link{serve_site}()}.}
+\item{local}{Whether to build the website locally. This argument is passed to
+\code{\link{hugo_build}()}, and \code{local = TRUE} is mainly for serving
+the site locally via \code{\link{serve_site}()}.}
 
 \item{method}{Different methods to build a website (each with pros and cons).
-See Details. The value of this argument will be obtained from the global
-option \code{getOption('blogdown.method')} when it is set.}
+See \sQuote{Details}. The value of this argument will be obtained from the
+global option \code{getOption('blogdown.method')} when it is set.}
 
 \item{run_hugo}{Whether to run \code{hugo_build()} after R Markdown files are
 compiled.}
+
+\item{build_rmd}{Whether to (re)build R Markdown files. By default, they are
+not rebuilt. See \sQuote{Details} for how \code{build_rmd = TRUE} works.
+Alternatively, it can take a vector of file paths, which means these files
+are to be (re)built.}
 }
 \description{
-Compile all Rmd files and build the site through Hugo.
+Build the site through Hugo, and optionally (re)build R Markdown files.
 }
 \details{
 You can use \code{\link{serve_site}()} to preview your website locally, and
-\code{build_site()} to build the site for publishing.
+\code{build_site()} to build the site for publishing. However, if you use a
+web publishing service like Netlify, you do not need to build the site
+locally, but can build it on the cloud. See Section 1.7 of the \pkg{blogdown}
+book for more information:
+\url{https://bookdown.org/yihui/blogdown/workflow.html}.
 
-For the \code{method} argument: \code{method = "html"} means to render all
-Rmd files to HTML via \code{rmarkdown::\link[rmarkdown]{render}()} (which
-means Markdown is processed through Pandoc), and process the paths of
-external dependencies generated from R code chunks, including images and HTML
+For the \code{method} argument: \code{method = "html"} means to render Rmd
+files to HTML via \code{rmarkdown::\link[rmarkdown]{render}()} (which means
+Markdown is processed through Pandoc), and process the paths of external
+dependencies generated from R code chunks, including images and HTML
 dependencies.
 
 For all rendering methods, a custom R script \file{R/build.R} will be
@@ -42,10 +57,15 @@ command line (you can retrieve the command-line arguments via
 \code{\link{commandArgs}(TRUE)}). For \code{method = "html"}, the R script
 \file{R/build2.R} (if exists) will be executed after Hugo has built the site.
 This can be useful if you want to post-process the site.
-}
-\note{
-This function recompiles all R Markdown files by default, even if the
-  output files are newer than the source files. If you want to build the site
-  without rebuilding all R Markdown files, you should use
-  \code{\link{hugo_build}()} instead.
+
+When \code{build_rmd = TRUE}, all Rmd files will be (re)built. You can set
+the global option \code{blogdown.files_filter} to a function to determine
+which Rmd files to build when \code{build_rmd = TRUE}. This function takes a
+vector of Rmd file paths, and should return a subset of these paths to be
+built. By default, \code{options(blogdown.files_filter = \link{identity}}.
+You can use \code{blogdown::\link{timestamp_filter}}, which filters the files
+by comparing their time stamps (modification time) with the time stamps of
+their output files. Another filter function is
+\code{blogdown::\link{md5sum_filter}}, which is more robust in determining if
+an Rmd file has been modified (hence needs to be rebuilt).
 }
