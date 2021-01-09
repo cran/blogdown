@@ -27,6 +27,8 @@
 #' @param ... Arguments passed to \code{servr::\link{server_config}()} (only
 #'   arguments \code{host}, \code{port}, \code{browser}, \code{daemon}, and
 #'   \code{interval} are supported).
+#' @param .site_dir Directory to search for site configuration file
+#' (defaults to \code{getwd()}).
 #' @note For the Hugo server, the argument \command{--navigateToChanged} is used
 #'   by default, which means when you edit and save a source file, Hugo will
 #'   automatically navigate the web browser to the page corresponding to this
@@ -36,7 +38,7 @@
 #'   manually refresh your browser. It should work reliably for pure Markdown
 #'   posts, though.
 #' @export
-serve_site = function(...) {
+serve_site = function(..., .site_dir = NULL) {
   serve = switch(
     generator(), hugo = serve_it(),
     jekyll = serve_it(
@@ -49,10 +51,12 @@ serve_site = function(...) {
     ),
     stop("Cannot recognize the site (only Hugo, Jekyll, and Hexo are supported)")
   )
-  serve(...)
+  serve(..., .site_dir = .site_dir)
 }
 
 server_ready = function(url) {
+  # for some reason, R cannot read localhost, but 127.0.0.1 works
+  url = sub('^http://localhost:', 'http://127.0.0.1:', url)
   !inherits(
     xfun::try_silent(suppressWarnings(readLines(url))), 'try-error'
   )
@@ -69,8 +73,13 @@ preview_site = function(..., startup = FALSE) {
   if (startup) {
     opts$set(preview = TRUE)
     on.exit(opts$set(preview = NULL), add = TRUE)
+    # open some files initially if specified
+    init_files = get_option('blogdown.initial_files')
+    if (is.function(init_files)) init_files = init_files()
+    for (f in init_files) if (file_exists(f)) open_file(f)
   } else {
     opts$set(knitting = TRUE)
+    on.exit(refresh_viewer(), add = TRUE)
   }
   invisible(serve_site(...))
 }
@@ -81,8 +90,8 @@ preview_mode = function() {
 
 serve_it = function(pdir = publish_dir(), baseurl = site_base_dir()) {
   g = generator(); config = config_files(g)
-  function(...) {
-    root = site_root(config)
+  function(..., .site_dir = NULL) {
+    root = site_root(config, .site_dir)
     if (root %in% opts$get('served_dirs')) {
       if (preview_mode()) return()
       servr::browse_last()
@@ -92,7 +101,7 @@ serve_it = function(pdir = publish_dir(), baseurl = site_base_dir()) {
         'start a new server, you may stop existing servers with ',
         'blogdown::stop_server(), or restart R. Normally you should not need to ',
         'serve the same site multiple times in the same R session',
-        if (servr:::is_rstudio()) c(
+        if (is_rstudio()) c(
           ', otherwise you may run into issues like ',
           'https://github.com/rstudio/blogdown/issues/404'
         ), '.'
@@ -101,8 +110,82 @@ serve_it = function(pdir = publish_dir(), baseurl = site_base_dir()) {
 
     owd = setwd(root); on.exit(setwd(owd), add = TRUE)
 
-    build_it = function(files) {
-      if (is.null(b <- getOption('blogdown.knit.on_save'))) {
+    server = servr::server_config(..., baseurl = baseurl, hosturl = function(host) {
+      if (g == 'hugo' && host == '127.0.0.1') 'localhost' else host
+    })
+
+    # launch the hugo/jekyll/hexo server
+    cmd = if (g == 'hugo') find_hugo() else g
+    host = server$host; port = server$port; intv = server$interval
+    if (!servr:::port_available(port, host)) stop(
+      'The port ', port, ' at ', host, ' is unavailable', call. = FALSE
+    )
+    args_fun = match.fun(paste0(g, '_server_args'))
+    cmd_args = args_fun(host, port)
+    if (g == 'hugo') {
+      tweak_hugo_env()
+      if (length(list_rmds(pattern = bundle_regex('.R(md|markdown)$'))))
+        create_shortcode('postref.html', 'blogdown/postref')
+    }
+    # if requested not to demonize the server, run it in the foreground process,
+    # which will block the R session
+    if (!server$daemon) return(system2(cmd, cmd_args))
+
+    pid = if (getOption('blogdown.use.processx', xfun::loadable('processx'))) {
+      proc = processx::process$new(cmd, cmd_args, stderr = '|', cleanup_tree = TRUE)
+      I(proc$get_pid())
+    } else {
+      xfun::bg_process(cmd, cmd_args)
+    }
+    opts$append(pids = list(pid))
+
+    message(
+      'Launching the server via the command:\n  ',
+      paste(c(cmd, cmd_args), collapse = ' ')
+    )
+    i = 0
+    repeat {
+      Sys.sleep(1)
+      # for a process started with processx, check if it has died with an error
+      if (inherits(pid, 'AsIs') && !proc$is_alive()) {
+        err = paste(gsub('^Error: ', '', proc$read_error()), collapse = '\n')
+        stop(if (err == '') {
+          'Failed to serve the site; see if blogdown::build_site() gives more info.'
+        } else err, call. = FALSE)
+      }
+      if (server_ready(server$url)) break
+      if (i >= get_option('blogdown.server.timeout', 30)) {
+        s = proc_kill(pid)  # if s == 0, the server must have been started successfully
+        stop(if (s == 0) c(
+          'Failed to launch the preview of the site. This may be a bug of blogdown. ',
+          'You may file a report to https://github.com/rstudio/blogdown/issues with ',
+          'a reproducible example. Thanks!'
+        ) else c(
+          'It took more than ', i, ' seconds to launch the server. An error might ',
+          'have occurred with ', g, '. You may run blogdown::build_site() and see ',
+          'if it gives more info. If the site is very large and needs more time to ',
+          'be built, set options(blogdown.server.timeout) to a larger value.'
+        ), call. = FALSE)
+      }
+      i = i + 1
+    }
+    server$browse()
+    # server is correctly started so we record the directory served
+    opts$append(served_dirs = root)
+    message(
+      'Launched the ', g, ' server in the background (process ID: ', pid, '). ',
+      'To stop it, call blogdown::stop_server() or restart the R session.'
+    )
+
+    # delete the resources/ dir if it is empty
+    if (g == 'hugo') del_empty_dir('resources')
+
+    # whether to watch for changes in Rmd files?
+    if (!get_option('blogdown.knit.on_save', TRUE)) return(invisible())
+
+    # rebuild specific or changed Rmd files
+    rebuild = function(files) {
+      if (is.null(b <- get_option('blogdown.knit.on_save'))) {
         b = !isTRUE(opts$get('knitting'))
         if (!b) {
           options(blogdown.knit.on_save = b)
@@ -117,72 +200,20 @@ serve_it = function(pdir = publish_dir(), baseurl = site_base_dir()) {
           files = b  # just ignore changed Rmd files, i.e., don't build them
         }
       }
-      build_site(TRUE, run_hugo = FALSE, build_rmd = files)
+      xfun::in_dir(root, build_site(TRUE, run_hugo = FALSE, build_rmd = files))
     }
 
-    server = servr::server_config(...)
+    # build Rmd files that are new and don't have corresponding output files
+    rebuild(rmd_files <- filter_newfile(list_rmds()))
 
-    # launch the hugo/jekyll/hexo server
-    cmd = if (g == 'hugo') find_hugo() else g
-    host = server$host; port = server$port; intv = server$interval
-    if (!servr:::port_available(port, host)) stop(
-      'The port ', port, ' at ', host, ' is unavailable', call. = FALSE
-    )
-    args_fun = match.fun(paste0(g, '_server_args'))
-    cmd_args = args_fun(host, port)
-    if (g == 'hugo') tweak_hugo_env()
-    # if requested not to demonize the server, run it in the foreground process,
-    # which will block the R session
-    if (!server$daemon) return(system2(cmd, cmd_args))
-
-    pid = if (getOption('blogdown.use.processx', xfun::loadable('processx'))) {
-      proc = processx::process$new(cmd, cmd_args, stderr = '|', cleanup_tree = TRUE)
-      I(proc$get_pid())
-    } else {
-      bg_process(cmd, cmd_args)
-    }
-    opts$append(pids = list(pid))
-
-    message(
-      'Launching the server via the command:\n  ',
-      paste(c(cmd, cmd_args), collapse = ' ')
-    )
-    i = 0
-    repeat {
-      Sys.sleep(1)
-      if (server_ready(server$url)) break
-      if (i >= getOption('blogdown.server.timeout', 30)) {
-        proc_kill(pid)
-        stop(
-          'It took more than ', i, ' seconds to launch the server. ',
-          'There may be something wrong. The process has been killed. ',
-          'If the site needs more time to be built and launched, set ',
-          'options(blogdown.server.timeout) to a larger value.',
-          call. = FALSE
-        )
-      }
-      i = i + 1
-    }
-    server$browse()
-    # server is correctly started so we record the directory served
-    opts$append(served_dirs = root)
-    message(
-      'Launched the ', g, ' server in the background (process ID: ', pid, '). ',
-      'To stop it, call blogdown::stop_server() or restart the R session.'
-    )
-
-    # whether to watch for changes in Rmd files?
-    if (!getOption('blogdown.knit.on_save', TRUE)) return(invisible())
-
-    rmd_files = NULL
     watch = servr:::watch_dir('.', rmd_pattern, handler = function(files) {
       rmd_files <<- files
     })
     watch_build = function() {
       # stop watching if stop_server() has cleared served_dirs
       if (is.null(opts$get('served_dirs'))) return(invisible())
-      if (watch()) try(build_it(rmd_files))
-      if (getOption('blogdown.knit.on_save', TRUE)) later::later(watch_build, intv)
+      if (watch()) try({rebuild(rmd_files); refresh_viewer()})
+      if (get_option('blogdown.knit.on_save', TRUE)) later::later(watch_build, intv)
     }
     watch_build()
 
@@ -191,32 +222,13 @@ serve_it = function(pdir = publish_dir(), baseurl = site_base_dir()) {
 }
 
 jekyll_server_args = function(host, port) {
-  c('serve', '--port', port, '--host', host)
+  c('serve', '--port', port, '--host', host, get_option(
+    'blogdown.jekyll.server', c('--watch', '--incremental', '--livereload')
+  ))
 }
 
 hexo_server_args = function(host, port) {
-  c('server', '-p', port, '-i', host)
-}
-
-# kill a process and all its child processes
-proc_kill = function(pid, recursive = TRUE, ...) {
-  run_cmd = base::system2
-  if (is_windows()) {
-    run_cmd('taskkill', c(if (recursive) '/t', '/f', '/pid', pid), ...)
-  } else {
-    run_cmd('kill', c(pid, if (recursive) child_pids(pid)), ...)
-  }
-}
-
-# obtain pids of all child processes (recursively)
-child_pids = function(id) {
-  x = system2('sh', shQuote(c(pkg_file('scripts', 'child_pids.sh'), id)), stdout = TRUE)
-  grep('^[0-9]+$', x, value = TRUE)
-}
-
-powershell = function(command) {
-  if (Sys.which('powershell') == '') return()
-  system2('powershell', c('-Command', shQuote(command)), stdout = TRUE)
+  c('server', '-p', port, '-i', host, get_option('blogdown.hexo.server'))
 }
 
 #' @export
@@ -241,69 +253,15 @@ get_config2 = function(key, default) {
   res[[key]] %n% default
 }
 
-# start a background process, and return its process ID
-bg_process = function(command, args = character(), timeout = 30) {
-  id = NULL
+# refresh the viewer because hugo's livereload doesn't work on RStudio
+# Server: https://github.com/rstudio/rstudio/issues/8096 (TODO: check if
+# it's fixed in the future: https://github.com/gohugoio/hugo/pull/6698)
+refresh_viewer = function() {
+  if (!is_rstudio_server()) return()
+  server_wait()
+  rstudioapi::executeCommand('viewerRefresh')
+}
 
-  if (is_windows()) {
-    # format of task list: hugo.exe    4592 Console      1     35,188 K
-    tasklist = function() system2('tasklist', stdout = TRUE)
-    pid1 = tasklist()
-    system2(command, args, wait = FALSE)
-
-    get_pid = function(time) {
-      # make sure the command points to an actual executable (e.g., resolve 'R'
-      # to 'R.exe')
-      if (!file.exists(command)) {
-        if (Sys.which(command) != '') command = Sys.which(command)
-      }
-      cmd = basename(command)
-
-      # use PowerShell to figure out the PID if possible:
-      res = powershell(sprintf(
-        'Get-CimInstance Win32_Process -Filter "name = \'%s\'" | select CommandLine, ProcessId | ConvertTo-Csv', cmd
-      ))
-      if (length(res) > 1) {
-        res = read.csv(text = res, comment.char = '#', stringsAsFactors = FALSE)
-        if (length(r1 <- res[, 'CommandLine']) && length(r2 <- res[, 'ProcessId'])) {
-          cmd2 = paste(c(cmd, args), collapse = ' ')
-          r2 = r2[grep(cmd2, r1, fixed = TRUE)]
-          if (length(r2)) return(r2)
-        }
-      }
-
-      # don't try this method until 1/5 of timeout has passed
-      if (!is.null(res) && time < timeout/5) return()
-      pid2 = setdiff(tasklist(), pid1)
-      # the process's info should start with the command name
-      pid2 = pid2[substr(pid2, 1, nchar(cmd)) == cmd]
-      if (length(pid2) == 0) return()
-      m = regexec('\\s+([0-9]+)\\s+', pid2)
-      for (v in regmatches(pid2, m)) if (length(v) >= 2) return(v[2])
-    }
-  } else {
-    pid = tempfile(); on.exit(unlink(pid), add = TRUE)
-    code = paste(c(
-      shQuote(c(command, args)),
-      if (!getOption('xfun.bg_process.verbose', FALSE)) '> /dev/null',
-      '& echo $! >', shQuote(pid)
-    ), collapse = ' ')
-    system2('sh', c('-c', shQuote(code)))
-    get_pid = function(time) {
-      if (file.exists(pid)) readLines(pid)
-    }
-  }
-
-  t0 = Sys.time()
-  while ((time <- difftime(Sys.time(), t0, units = 'secs')) < timeout) {
-    if (length(id <- get_pid(time)) == 1) break
-  }
-
-  if (length(id) == 1) return(id)
-
-  system2(command, args, timeout = timeout)  # see what the error is
-  stop(
-    'Failed to run the command in ', timeout, ' seconds (timeout): ',
-    paste(shQuote(c(command, args)), collapse = ' ')
-  )
+server_wait = function() {
+  Sys.sleep(get_option('blogdown.server.wait', 2))
 }

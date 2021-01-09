@@ -4,29 +4,30 @@
 \alias{build_site}
 \title{Build a website}
 \usage{
-build_site(
-  local = FALSE,
-  method = c("html", "custom"),
-  run_hugo = TRUE,
-  build_rmd = FALSE
-)
+build_site(local = FALSE, method, run_hugo = TRUE, build_rmd = FALSE)
 }
 \arguments{
 \item{local}{Whether to build the website locally. This argument is passed to
 \code{\link{hugo_build}()}, and \code{local = TRUE} is mainly for serving
 the site locally via \code{\link{serve_site}()}.}
 
-\item{method}{Different methods to build a website (each with pros and cons).
-See \sQuote{Details}. The value of this argument will be obtained from the
-global option \code{getOption('blogdown.method')} when it is set.}
+\item{method}{This argument has been deprecated. Please set the global option
+\code{blogdown.method} instead. See \sQuote{Details}.}
 
 \item{run_hugo}{Whether to run \code{hugo_build()} after R Markdown files are
 compiled.}
 
 \item{build_rmd}{Whether to (re)build R Markdown files. By default, they are
-not rebuilt. See \sQuote{Details} for how \code{build_rmd = TRUE} works.
+not built. See \sQuote{Details} for how \code{build_rmd = TRUE} works.
 Alternatively, it can take a vector of file paths, which means these files
-are to be (re)built.}
+are to be (re)built. Or you can provide a function that takes a vector of
+paths of all R Markdown files under the \file{content/} directory, and
+returns a vector of paths of files to be built, e.g., \code{build_rmd =
+blogdown::filter_timestamp}. A few aliases are currently provided for such
+functions: \code{build_rmd = 'newfile'} is equivalent to \code{build_rmd =
+blogdown::filter_newfile}, \code{build_rmd = 'timestamp'} is equivalent to
+\code{build_rmd = blogdown::filter_timestamp}, and \code{build_rmd =
+'md5sum'} is equivalent to \code{build_rmd = blogdown::filter_md5sum}.}
 }
 \description{
 Build the site through Hugo, and optionally (re)build R Markdown files.
@@ -39,22 +40,28 @@ locally, but can build it on the cloud. See Section 1.7 of the \pkg{blogdown}
 book for more information:
 \url{https://bookdown.org/yihui/blogdown/workflow.html}.
 
-For the \code{method} argument: \code{method = "html"} means to render Rmd
-files to HTML via \code{rmarkdown::\link[rmarkdown]{render}()} (which means
-Markdown is processed through Pandoc), and process the paths of external
-dependencies generated from R code chunks, including images and HTML
-dependencies.
+For R Markdown posts, there are a few possible rendering methods: \code{html}
+(the default), \code{markdown}, and \code{custom}. The method can be set in
+the global option \code{blogdown.method} (usually in the
+\file{\link{.Rprofile}} file), e.g., \code{options(blogdown.method =
+"custom")}.
+
+For the \code{html} method, \file{.Rmd} posts are rendered to \file{.html}
+via \code{rmarkdown::\link[rmarkdown]{render}()}, which means Markdown is
+processed through Pandoc. For the \code{markdown} method, \file{.Rmd} is
+rendered to \file{.md}, which will typically be rendered to HTML later by the
+site generator such as Hugo.
 
 For all rendering methods, a custom R script \file{R/build.R} will be
 executed if you have provided it under the root directory of the website
 (e.g. you can compile Rmd to Markdown through
-\code{knitr::\link[knitr]{knit}()} and build the side via
-\code{\link{hugo_cmd}()}). \code{method = "custom"} means it is entirely up
+\code{knitr::\link[knitr]{knit}()} and build the site via
+\code{\link{hugo_cmd}()}). The \code{custom} method means it is entirely up
 to this R script how a website is rendered. The script is executed via
 command line \command{Rscript "R/build.R"}, which means it is executed in a
 separate R session. The value of the argument \code{local} is passed to the
 command line (you can retrieve the command-line arguments via
-\code{\link{commandArgs}(TRUE)}). For \code{method = "html"}, the R script
+\code{\link{commandArgs}(TRUE)}). For other rendering methods, the R script
 \file{R/build2.R} (if exists) will be executed after Hugo has built the site.
 This can be useful if you want to post-process the site.
 
@@ -63,9 +70,10 @@ the global option \code{blogdown.files_filter} to a function to determine
 which Rmd files to build when \code{build_rmd = TRUE}. This function takes a
 vector of Rmd file paths, and should return a subset of these paths to be
 built. By default, \code{options(blogdown.files_filter = \link{identity}}.
-You can use \code{blogdown::\link{timestamp_filter}}, which filters the files
-by comparing their time stamps (modification time) with the time stamps of
-their output files. Another filter function is
-\code{blogdown::\link{md5sum_filter}}, which is more robust in determining if
+You can use \code{blogdown::\link{filter_newfile}}, which means to build new
+Rmd files that have not been built before, or
+\code{blogdown::\link{filter_timestamp}} to build Rmd files if their time
+stamps (modification time) are newer than their output files, or
+\code{blogdown::\link{filter_md5sum}}, which is more robust in determining if
 an Rmd file has been modified (hence needs to be rebuilt).
 }

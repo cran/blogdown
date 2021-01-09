@@ -16,21 +16,24 @@ hugo_cmd(...)
 
 hugo_version()
 
-hugo_available(version = "0.0.0")
+hugo_available(version = "0.0.0", exact = FALSE)
 
 hugo_build(local = FALSE)
 
 new_site(
   dir = ".",
+  force = NA,
   install_hugo = TRUE,
-  format = "toml",
+  format = "yaml",
   sample = TRUE,
   theme = "yihui/hugo-lithium",
   hostname = "github.com",
   theme_example = TRUE,
   empty_dirs = FALSE,
   to_yaml = TRUE,
-  serve = interactive()
+  netlify = TRUE,
+  .Rprofile = TRUE,
+  serve = if (interactive()) "ask" else FALSE
 )
 
 new_content(path, kind = "", open = interactive())
@@ -61,19 +64,25 @@ run the command \command{hugo new path}).}
 
 \item{version}{A version number.}
 
-\item{local}{Whether to build the site for local preview (if \code{TRUE}, all
-drafts and future posts will also be built, and the site configuration
-\code{baseurl} will be set to \code{/} temporarily).}
+\item{exact}{If \code{FALSE}, check if the current Hugo version is equal to
+or higher than the specified \code{version}. If \code{TRUE}, check if the
+exact version is available.}
 
-\item{dir}{The directory of the new site. It should be empty or only contain
-hidden files, RStudio project (\file{*.Rproj}) files, \file{LICENSE},
-and/or \file{README}/\file{README.md}.}
+\item{local}{Whether to build the site for local preview (if \code{TRUE}, all
+drafts and future posts will also be built).}
+
+\item{dir}{The directory of the new site.}
+
+\item{force}{Whether to create the site in a directory even if it is not
+empty. By default, \code{force = TRUE} when the directory only contains
+hidden, RStudio project (\file{*.Rproj}), \file{LICENSE}, and/or
+\file{README} files.}
 
 \item{install_hugo}{Whether to install Hugo automatically if it is not found.}
 
 \item{format}{The format of the configuration file. Note that the frontmatter
 of the new (R) Markdown file created by \code{new_content()} always uses
-YAML instead of TOML.}
+YAML instead of TOML or JSON.}
 
 \item{sample}{Whether to add sample content. Hugo creates an empty site by
 default, but this function adds sample content by default.}
@@ -97,7 +106,16 @@ directory if it exists in the theme. Not all themes provide example sites.}
 
 \item{to_yaml}{Whether to convert the metadata of all posts to YAML.}
 
-\item{serve}{Whether to start a local server to serve the site.}
+\item{netlify}{Whether to create a Netlify config file \file{netlify.toml}.}
+
+\item{.Rprofile}{Whether to create a \file{.Rprofile} file. If \code{TRUE}, a
+sample \file{.Rprofile} will be created. It contains some global options,
+such as \code{options(blogdown.hugo.version)}, which makes sure you will
+use a specific version of Hugo for this site in the future.}
+
+\item{serve}{Whether to start a local server to serve the site. By default,
+this function will ask you in an interactive R session if you want to serve
+the site.}
 
 \item{path}{The path to the new file under the \file{content} directory.}
 
@@ -127,7 +145,7 @@ date.}
 
 \item{slug}{The slug of the post. By default (\code{NULL}), the slug is
 generated from the filename by removing the date and filename extension,
-e.g., if \code{file = 'post/2015-07-23-hi-there.md'}, \code{slug} will be
+e.g., if \code{file = 'post/2020-07-23-hi-there.md'}, \code{slug} will be
 \code{hi-there}. Set \code{slug = ''} if you do not want it.}
 
 \item{title_case}{A function to convert the title to title case. If
@@ -162,8 +180,8 @@ Wrapper functions to run Hugo commands via \code{\link{system2}('hugo',
 \item \code{hugo_version}: Return the version number of Hugo if possible, which is
 extracted from the output of \code{hugo_cmd('version')}.
 
-\item \code{hugo_available}: Check if Hugo with a certain version or above is
-available.
+\item \code{hugo_available}: Check if Hugo of a certain version (or above if
+\code{exact = FALSE}) is available.
 
 \item \code{hugo_build}: Build a plain Hugo website. Note that the function
 \code{\link{build_site}()} first compiles Rmd files, and then calls Hugo

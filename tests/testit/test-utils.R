@@ -1,9 +1,8 @@
 library(testit)
 
-assert(
-  'pkg_file() returns files/dirs from the package installation directory',
-  dir_exists(pkg_file('resources'))
-)
+assert('pkg_file() returns files/dirs from the package installation directory', {
+  (dir_exists(pkg_file('resources')))
+})
 
 raw_list = function(x) {
   if (!is.list(x)) return(x)
@@ -15,7 +14,7 @@ raw_list = function(x) {
 
 x1 = c('a = "foo"', '# a comment', 'b = false', 'c3 = 10', 'd_e = "0.10"')
 x2 = list(a = 'foo', b = FALSE, c3 = 10L, d_e = '0.10')
-if (Sys.getenv('NOT_CRAN') == 'true') assert('read_toml() works', {
+assert('read_toml() works', {
   (raw_list(read_toml(x = x1)) %==% x2)
   (read_toml(x = x1, strict = FALSE) %==% x2)
 })
@@ -43,6 +42,14 @@ assert('post_slug() extracts a slug from a filename', {
   (post_slug('path/to/2015-07-23-foo-bar/index.Rmd') %==% 'foo-bar')
 })
 
+assert('bundle_index() checks if a file path points to the index page of a bundle', {
+  (bundle_index(c('index.Rmd', 'index.Rmarkdown', 'index.html', 'index.md')))
+  (bundle_index(c('index.en.Rmd', 'index.ja.html', 'index.fr.Rmarkdown')))
+  (!bundle_index(c('index2.Rmd', 'index .md', 'abc.html', 'index.zzz.md')))
+  (bundle_index(c('index', 'index.en'), ext = FALSE))
+  (!bundle_index(c('index_', 'index.en_'), ext = FALSE))
+})
+
 test_rmd_file = tempfile()
 test_rmd = '---
 date: \'2017-05-01\'
@@ -61,5 +68,5 @@ assert('modify_yaml perserves original values properly', {
   old_content = readLines(test_rmd_file)
 
   modify_yaml(test_rmd_file, .keep_empty = TRUE)
-  readLines(test_rmd_file) %==% old_content
+  (readLines(test_rmd_file) %==% old_content)
 })

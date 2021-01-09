@@ -1,7 +1,7 @@
 # figure out the base dir of the website, e.g. http://example.com/project/ ->
 # project/, so that serve_site() works as a local server when the website is to
 # be generated to a subdirectory of a domain (see the baseurl argument of
-# servr::httw())
+# servr::server_config())
 site_base_dir = function() {
   config = load_config()
   # baseurl is not meaningful when using relative URLs
@@ -54,9 +54,6 @@ file.copy2 = function(from, to, ...) {
   } else mapply(file.copy, from, to, ...)
 }
 
-# make sure it is a file instead of an existing dir
-file_exists = function(x) file_test('-f', x)
-
 dir_rename = function(from, to, clean = FALSE) {
   if (!dir_exists(from)) return()
   if (clean) unlink(to, recursive = TRUE)
@@ -76,6 +73,11 @@ dirs_rename = function(from, to, ...) {
   for (i in seq_len(n)) dir_rename(from[i], to[i], ...)
 }
 
+# relative path with '/' as the path separator
+rel_path = function(x) {
+  xfun::relative_path(xfun::normalize_path(x))
+}
+
 # change the default of full.names and recursive in list.files() because these
 # values are used much more frequently than the original defaults
 list_files = function(..., full.names = TRUE, recursive = TRUE) {
@@ -83,7 +85,7 @@ list_files = function(..., full.names = TRUE, recursive = TRUE) {
 }
 
 # does html output file not exist, or is it older than Rmd for at least N seconds?
-require_rebuild = function(html, rmd, N = getOption('blogdown.time_diff', 0)) {
+require_rebuild = function(html, rmd, N = get_option('blogdown.time_diff', 0)) {
   m1 = file.mtime(html); m2 = file.mtime(rmd)
   !file_exists(html) | difftime(m2, m1, units = 'secs') > N
 }
@@ -101,45 +103,66 @@ require_rebuild = function(html, rmd, N = getOption('blogdown.time_diff', 0)) {
 #' @export
 build_dir = function(dir = '.', force = FALSE, ignore = '[.]Rproj$') {
   for (f in list_rmds(dir)) {
-    render_it = function() render_page(f, 'render_rmarkdown.R')
-    if (force) { render_it(); next }
+    if (force) { render_new(f); next }
     files = list.files(dirname(f), full.names = TRUE)
     files = grep(ignore, files, value = TRUE, invert = TRUE)
     i = files == f  # should be only one in files matching f
     bases = with_ext(files, '')
     files = files[!i & bases == bases[i]]  # files with same basename as f (Rmd)
-    if (length(files) == 0 || any(require_rebuild(files, f))) render_it()
+    if (length(files) == 0 || any(require_rebuild(files, f))) render_new(f)
   }
 }
 
-#' Look for files that have been possibly modified
+# render Rmd in a new R session
+render_new = function(f) xfun::Rscript_call(
+  rmarkdown::render, list(f, envir = globalenv(), quiet = TRUE),
+  fail = c('Failed to render ', f)
+)
+
+#' Look for files that have been possibly modified or out-of-date
 #'
 #' Filter files by checking if their modification times or MD5 checksums have
 #' changed.
 #'
-#' The function \code{md5sum_filter()} reads the MD5 checksums of files from a
+#' The function \code{filter_newfile()} returns paths of source files that do
+#' not have corresponding output files, e.g., an \file{.Rmd} file that doesn't
+#' have the \file{.html} output file.
+#'
+#' The function \code{timestamp_filer()} compares the modification time of an
+#' Rmd file with that of its output file, and returns the path of a file if it
+#' is newer than its output file by \code{N} seconds (or if the output file does
+#' not exist), where \code{N} is obtained from the R global option
+#' \code{blogdown.time_diff}. By default, \code{N = 0}. You may change it via
+#' \code{options()}, e.g., \code{options(blogdown.time_diff = 5)} means an Rmd
+#' file will be returned when its modification time at least 5 seconds newer
+#' than its output file's modification time.
+#'
+#' The function \code{filter_md5sum()} reads the MD5 checksums of files from a
 #' database (a tab-separated text file), and returns the files of which the
 #' checksums have changed. If the database does not exist, write the checksums
 #' of files to it, otherwise update the checksums after the changed files have
 #' been identified. When a file is modified, its MD5 checksum is very likely to
 #' change.
 #'
-#' The function \code{timestamp_filer()} compares the modification time of an
-#' Rmd file with that of its output file, and returns a file if it's newer than
-#' its output file by \code{N} seconds (or if the output file does not exist),
-#' where \code{N} is obtained from the R global option
-#' \code{blogdown.time_diff}. By default, \code{N = 0}. You may change it via
-#' \code{options()}, e.g., \code{options(blogdown.time_diff = 5)} means an Rmd
-#' file will be returned when its modification time at least 5 seconds newer
-#' than its output file's modification time.
-#'
 #' These functions can be used to determine which Rmd files to be rebuilt in a
 #' \pkg{blogdown} website. See \code{\link{build_site}()} for more information.
 #' @param files A vector of file paths.
-#' @param db Path to the database file.
-#' @return Paths of files of which the checksums have changed.
+#' @return The filtered file paths.
 #' @export
-md5sum_filter = function(files, db = 'blogdown/md5sum.txt') {
+filter_newfile = function(files) {
+  files[!file_exists(output_file(files))]
+}
+
+#' @rdname filter_newfile
+#' @export
+filter_timestamp = function(files) {
+  files[require_rebuild(output_file(files), files)]
+}
+
+#' @param db Path to the database file.
+#' @rdname filter_newfile
+#' @export
+filter_md5sum = function(files, db = 'blogdown/md5sum.txt') {
   opt = options(stringsAsFactors = FALSE); on.exit(options(opt), add = TRUE)
   md5 = data.frame(file = files, checksum = tools::md5sum(files))  # new checksums
   if (!file.exists(db)) {
@@ -157,48 +180,51 @@ md5sum_filter = function(files, db = 'blogdown/md5sum.txt') {
   files
 }
 
-#' @rdname md5sum_filter
-#' @export
-timestamp_filter = function(files) {
-  files[require_rebuild(output_file(files), files)]
+# TODO: remove them in the future
+md5sum_filter = function(...) {
+  warning('The function md5sum_filter() has been renamed to filter_md5sum()')
+  filter_md5sum(...)
 }
-
-is_windows = function() xfun::is_windows()
-is_osx = function() xfun::is_macos()
-is_linux = function() xfun::is_linux()
+timestamp_filter = function(...) {
+  warning('The function timestamp_filter() has been renamed to filter_timestamp()')
+  filter_timestamp(...)
+}
 
 # guess if the OS is 64bit
 is_64bit = function() {
   length(grep('64', unlist(Sys.info()[c('machine', 'release')]))) > 0
 }
 
-is_rmarkdown = function(x) grepl('[.][Rr]markdown$', x)
-
-# build .Rmarkdown to .markdown, and .Rmd to .html
-output_file = function(file, md = is_rmarkdown(file)) {
-  with_ext(file, ifelse(md, 'markdown', 'html'))
+# build .Rmarkdown to .markdown, and .Rmd to .html unless the global option
+# blogdown.method = 'markdown'
+output_file = function(file) {
+  ext = if (build_method() == 'markdown') 'md' else 'html'
+  ext = rep(ext, length(file))
+  ext[grep('[.][Rr]markdown$', file)] = 'markdown'
+  with_ext(file, ext)
 }
 
 opts = knitr:::new_defaults()
 
+# execute code in the site root dir
+in_root = function(expr) xfun::in_dir(site_root(), expr)
+
 # read config file and cache the options (i.e. do not read again unless the config is newer)
-load_config = function() {
+load_config = function() in_root({
   config = opts$get('config')
-  owd = setwd(site_root()); on.exit(setwd(owd), add = TRUE)
   f = find_config(); m = file.info(f)[, 'mtime']
   # read config only if it has been updated
   if (identical(attr(config, 'config_time'), m)) return(config)
   parser = switch(f, 'config.toml' = read_toml, 'config.yaml' = yaml_load_file)
   config = parser(f)
   attr(config, 'config_time') = m
-  attr(config, 'config_content') = read_utf8(f)
   opts$set(config = config)
-  check_config(config, f)
-}
+  config
+})
 
 # check if the user has configured Multilingual Mode for Hugo in config.toml
-check_lang = function(config = load_config()) {
-  get_config('DefaultContentLanguage', NULL, config)
+get_lang = function(config = load_config()) {
+  if (generator() == 'hugo') get_config('defaultContentLanguage', NULL, config)
 }
 
 # a horizontal rule
@@ -206,43 +232,47 @@ hrule = function(char = '-', width = getOption('width')) {
   paste(rep('-', width), collapse = '')
 }
 
-message2 = function(...) {
+warning2 = function(...) warning(..., call. = FALSE)
+
+message2 = function(..., files = NULL) {
   message(hrule())
   message(...)
   message(hrule())
+  for (f in files) open_file(f)
 }
 
-check_config = function(config, f) {
-  base = config[['baseurl']]
-  if (is_example_url(base)) {
-    open_file(f)
-    warning(
-      'You should change the "baseurl" option in ', f, ' from ', base,
-      ' to your actual domain; if you do not have a domain, set "baseurl" to "/"',
-      immediate. = TRUE, call. = FALSE
-    )
-  }
-  ignore = c('\\.Rmd$', '\\.Rmarkdown$', '_cache$', '\\.knit\\.md$', '\\.utf8\\.md$')
-  if (is.null(s <- config[['ignoreFiles']])) message2(
-    "You are recommended to set the 'ignoreFiles' field in ", f, ' to: ',
-    xfun::tojson(ignore)
-  ) else if (!all(ignore %in% s)) message2(
-    "You are recommended to ignore more items in the 'ignoreFiles' field in ", f, ": ",
-    gsub('^\\[|\\]$', '', xfun::tojson(I(setdiff(ignore, s))))
-  )
-  if ('_files$' %in% s) message2(
-    "You are recommended to remove the item '_files$' in the 'ignoreFiles' field in ", f, '.'
-  )
-  config
+msg1 = function(...) msg_cat('* ', ..., '\n')
+msg2 = function(...) msg_cat('\n==> ', ..., '\n\n')
+
+msg_init = function(...) msg_cat('\u2015 ', ..., '\n')  # -
+msg_next = function(...) msg_cat('\u007c ', ..., '\n')  # |
+msg_todo = function(...) msg_cat('\u25cf ', "[TODO] ", ..., '\n')  # solid dot
+msg_okay = function(...) msg_cat('\u25cb ', ..., '\n')  # o
+msg_done = function(...) msg_init("Check complete: ", ..., '\n')
+
+# c(ITEM, ITEM, ITEM) ->
+#   before ITEM after sep
+#   before ITEM after sep
+#   before ITEM after
+indent_list = function(x, before = '', after = '', sep = '\n') {
+  paste0('  ', before, x, after, collapse = sep)
 }
 
-is_example_url = function(url) {
-  is.character(url) && grepl(
-    '^https?://(www[.])?(example.(org|com)|replace-this-with-your-hugo-site.com)/?', url
-  )
+action_list = function(x, action = 'file.remove') {
+  paste0('  ', action, '(c(\n', indent_list(x, '"', '"', ',\n'), '\n  ))')
 }
 
-generator = function() getOption('blogdown.generator', 'hugo')
+# return a list of files to be opened initially in an RStudio project
+initial_files = function(n = 10) {
+  files = list.files(content_file(), md_pattern, full.names = TRUE, recursive = TRUE)
+  # if .Rmd has .md output, exclude .md
+  i = grep('^[Rr]', exts <- xfun::file_ext(files))
+  files = setdiff(files, with_ext(files[i], sub('^[Rr]', '', exts[i])))
+  files = head(files, n)
+  c(files, existing_files(c('netlify.toml', '.Rprofile', config_files())))
+}
+
+generator = function() get_option('blogdown.generator', 'hugo')
 
 # config files for different site generators
 config_files = function(which = generator()) {
@@ -263,9 +293,11 @@ find_config = function(files = config_files(), error = TRUE) {
 }
 
 # figure out the possible root directory of the website
-site_root = function(config = config_files()) {
+site_root = function(config = config_files(), .site_dir = NULL) {
   if (!is.null(root <- opts$get('site_root'))) return(root)
   owd = getwd(); on.exit(setwd(owd), add = TRUE)
+  # If starting point has been provided change to this directory
+  if (!is.null(.site_dir)) setwd(.site_dir)
   paths = NULL
   while (length(find_config(config, error = FALSE)) == 0) {
     w1 = getwd(); w2 = dirname(w1)
@@ -314,44 +346,67 @@ site_root = function(config = config_files()) {
 #' }
 read_toml = function(file, x = read_utf8(file), strict = TRUE) {
   if (strict) {
-    if (xfun::loadable('RcppTOML')) {
+    x2 = read_toml(x = x, strict = FALSE)  # obtain the names of top-level fields
+    ok = FALSE
+    if (hugo_available()) {
+      f2 = tempfile('toml', fileext = '.md'); on.exit(unlink(f2), add = TRUE)
+      write_utf8(c('+++', x, '+++'), f2)
+      # Hugo may fail to convert TOML to YAML, e.g., https://community.rstudio.com/t/86903
+      x = if (!is.null(hugo_convert_one(f2))) {
+        ok = TRUE
+        yaml_load_file(f2)
+      }
+    }
+    if (!ok && xfun::loadable('RcppTOML')) {
       x = paste(x, collapse = '\n')
       parser = getFromNamespace('parseTOML', 'RcppTOML')
-      return(parser(x, fromFile = FALSE))
+      x = parser(x, fromFile = FALSE, escape = FALSE)
+      ok = TRUE
     }
-    if (hugo_available()) {
-      f2 = tempfile(fileext = '.md'); on.exit(unlink(f2), add = TRUE)
-      write_utf8(c('+++', x, '+++'), f2)
-      hugo_convert_one(f2)
-      return(yaml_load_file(f2))
-    }
-    if (!missing(strict)) stop(
-      'Cannot parse TOML data because neither Hugo nor the R package RcppTOML is available.'
+    if (missing(strict)) {
+      if (!ok) return(x2)
+    } else if (!ok) stop(
+      'Neither Hugo nor the R package RcppTOML is available or able to parse the TOML data.'
     )
+    return(sort_by_names(x, names(x2)))
   }
+
+  # extract the top-level key name, e.g., foo.bar.baz -> foo
+  keys = function(x) {
+    unlist(lapply(strsplit(x, '[.]'), `[[`, 1))
+  }
+  # generate list(name = x)
+  named_list = function(x, name) setNames(list(x), name)
+
   # remove comments
   x = gsub('\\s+#.+', '', x)
-  z = list()
-  # arbitrary values
-  r = '^([[:alnum:]_]+?)\\s*=\\s*(.+)\\s*$'
-  y = grep(r, x, value = TRUE)
-  z[gsub(r, '\\1', y)] = as.list(gsub(r, '\\2', y))
-  # strings
-  r = '^([[:alnum:]_]+?)\\s*=\\s*"([^"]*?)"\\s*$'
-  y = grep(r, x, value = TRUE)
-  z[gsub(r, '\\1', y)] = as.list(gsub(r, '\\2', y))
-  # boolean
-  r = '^([[:alnum:]_]+?)\\s*=\\s*(true|false)\\s*$'
-  y = grep(r, x, value = TRUE)
-  z[gsub(r, '\\1', y)] = as.list(as.logical(gsub(r, '\\2', y)))
-  # numbers
-  r = '^([[:alnum:]_]+?)\\s*=\\s*([0-9.]+)\\s*$'
-  y = grep(r, x, value = TRUE)
-  z[gsub(r, '\\1', y)] = lapply(as.list(as.numeric(gsub(r, '\\2', y))), function(v) {
-    v2 = as.integer(v)
-    if (isTRUE(v2 == v)) v2 else v
+
+  # arbitrary values of the form 'foo = bar' or '[foo]' or '[[foo.bar]]'
+  r = '^(([[:alnum:]_]+?)\\s*=\\s*(.+)\\s*|\\[{1,2}([^]]+)\\]{1,2}(\\s*))$'
+  m = regexec(r, x)
+  z = lapply(regmatches(x, m), function(v) {
+    if (length(v) < 6) return()
+    # when data is '[foo]' instead of 'foo = bar', just return NULL
+    if (v[3] == '') return(named_list(NULL, keys(v[5])))
+    y = v[4]
+    # strings
+    if (grepl(r <- '^"([^"]*?)"$', y)) y = gsub(r, '\\1', y) else {
+      # boolean
+      if (y %in% c('true', 'false')) y = as.logical(y) else {
+        # numbers
+        if (grepl('^[0-9.]+$', y)) {
+          y2 = as.numeric(y)
+          if (!is.na(y2)) {
+            y = y2
+            y2 = as.integer(y)
+            if (y2 == y) y = y2
+          }
+        }
+      }
+    }
+    named_list(y, v[3])
   })
-  z
+  do.call(c, z)
 }
 
 #' @param output Path to an output file. If \code{NULL}, the TOML data is
@@ -360,7 +415,7 @@ read_toml = function(file, x = read_utf8(file), strict = TRUE) {
 #' @rdname read_toml
 write_toml = function(x, output = NULL) {
   if (!hugo_available()) stop('Hugo is required but not found.')
-  f = tempfile(fileext = '.md'); on.exit(unlink(f), add = TRUE)
+  f = tempfile('yaml', fileext = '.md'); on.exit(unlink(f), add = TRUE)
   write_utf8(c('---', as.yaml(x), '---'), f)
   hugo_convert_one(f, 'TOML')
   x = trim_ws(read_utf8(f))
@@ -388,15 +443,123 @@ yaml2toml = function(file, output = NULL) {
   write_toml(x, output)
 }
 
+# reorder x according to a given vector of names, e.g., c(b = 1, a = 2, c = 3)
+# -> c(c = 3, a = 2, b = 1) when the given names are c('c', 'a')
+sort_by_names = function(x, names) {
+  m = names(x)
+  x[c(intersect(names, m), setdiff(m, names))]
+}
+
+#' Create the configuration (file) for Netlify
+#'
+#' This function provides some default configurations for a Huge website to be
+#' built via Hugo and deployed on Netlify. It sets the build command for the
+#' production and preview contexts, respectively (for preview contexts such as
+#' \samp{deploy-preview}, the command will build future posts). It also sets the
+#' publish directory according to your setting in Hugo's config file (if it
+#' exists, otherwise it will be the default \file{public} directory). The Hugo
+#' version is set to the current version of Hugo found on your computer.
+#' @param output Path to the output file, or \code{NULL}. If the file exists and
+#'   the R session is interactive, you will be prompted to decide whether to
+#'   overwrite the file.
+#' @param new_config If any default configuration does not apply to your site,
+#'   you may provide a list of configurations to override the default. For
+#'   example, if you want to use Hugo v0.25.1, you may use \code{new_config =
+#'   list(build = list(environment = list(HUGO_VERSION = '0.25.1')))}.
+#' @return If \code{output = NULL}, a character vector of TOML data representing
+#'   the configurations (which you can preview and decide whether to write it to
+#'   a file), otherwise the TOML data is written to a file.
+#' @references See Netlify's documentation on the configuration file
+#'   \file{netlify.toml} for the possible settings:
+#'   \url{https://docs.netlify.com/configure-builds/file-based-configuration/}
+#' @export
+#' @examples
+#' blogdown::config_netlify(output = NULL)  # default data
+#'
+#' # change the publish dir to 'docs/'
+#' blogdown::config_netlify(NULL, list(build = list(publish = 'docs')))
+config_netlify = function(output = 'netlify.toml', new_config = list()) {
+  if (xfun::is_R_CMD_check() && !hugo_available()) {
+    warning('Hugo was not found. You may install it with blogdown::install_hugo().')
+    return()
+  }
+  # default config
+  d = list(
+    build = list(
+      command = 'hugo',
+      publish = tryCatch(publish_dir(tmp = FALSE), error = function(e) 'public'),
+      environment = list(HUGO_VERSION = as.character(hugo_version()))
+    ),
+    context = list(
+      production = list(
+        environment = list(HUGO_ENV = "production")
+      ),
+      `deploy-preview` = list(
+        command = "hugo -F -b $DEPLOY_PRIME_URL"
+      )
+    )
+  )
+  d$context$`branch-deploy` = d$context$`deploy-preview`
+  d = modifyList(d, new_config)
+  f = tempfile('netlify'); on.exit(unlink(f), add = TRUE)
+  write_toml(d, f)
+  if (is.null(output)) xfun::file_string(f) else {
+    if (file.exists(output)) {
+      message("The current existing '", output, "' is:")
+      message2(xfun::file_string(output), files = output)
+      message("The new '", output, "' will be:")
+      message2(xfun::file_string(f))
+      if (!yes_no(sprintf("Overwrite the existing '%s'?", output)))
+        return(warning(
+          "Cannot write to the file '", output, "' because it exists. You have ",
+          "to delete it (if you do not need it any more) before I can write to it."
+        ))
+    }
+    file.copy(f, output, overwrite = TRUE)
+    invisible(output)
+  }
+}
+
+#' Create or modify the \file{.Rprofile} file for a website project
+#'
+#' If the file \file{.Rprofile} does not exist in the current directory, copy
+#' the file from the \file{resources} directory of \pkg{blogdown}. If the option
+#' \code{blogdown.hugo.version} is not found in this file, append
+#' \code{options(blogdown.hugo.version = "VERSION")} to it, where \code{VERSION}
+#' is obtained from \code{\link{hugo_version}()}.
+#' @export
+#' @return As a side-effect, the file \file{.Rprofile} is created or modified.
+config_Rprofile = function() {
+  f1 = '.Rprofile'; f2 = pkg_file('resources', 'Rprofile'); x2 = xfun::file_string(f2)
+  if (file.exists(f1)) {
+    message("The file '", f1, "' exists, so I will not overwrite it with:")
+    message2(x2, files = f1)
+  }
+  file.copy(f2, f1, overwrite = FALSE)
+  ver = sprintf('\n# fix Hugo version\noptions(blogdown.hugo.version = "%s")\n', hugo_version())
+  if (!any(grepl('blogdown[.]hugo[.]version', x1 <- xfun::file_string(f1)))) {
+    if (!identical(x1, x2)) message2(
+      "I didn't find the option blogdown.hugo.version in '", f1,
+      "', so I will append the option to it.", files = f1
+    )
+    cat(ver, file = f1, append = TRUE)
+  }
+}
 
 # option names may be case insensitive
 get_config = function(field, default, config = load_config()) {
-  config[[field]] %n% config[[match(tolower(field), tolower(names(config)))]] %n% default
+  config[[field]] %n% index_ci(config, field) %n% default
+}
+
+# index an object with a case-insensitive name
+index_ci = function(x, name) {
+  x[[match(tolower(name), tolower(names(x)))]]
 }
 
 # read the publishDir option in config if the temporary publish dir is not set
-publish_dir = function(config = load_config()) {
-  publish_dir_tmp() %n% get_config('publishDir', 'public', config)
+publish_dir = function(config = load_config(), tmp = TRUE, default = 'public') {
+  p = if (tmp) publish_dir_tmp()
+  if (is.null(p)) get_config('publishDir', default, config) else p
 }
 
 # only a temporary workaround for the RStudio IDE issue: when a large number of
@@ -409,14 +572,14 @@ publish_dir_tmp = function() {
 }
 
 # use RStudio to open the file if possible
-open_file = function(x) {
-  tryCatch(rstudioapi::navigateToFile(x), error = function(e) file.edit(x))
+open_file = function(x, open = interactive(), line = -1L) {
+  if (open) tryCatch(rstudioapi::navigateToFile(x, line), error = function(e) file.edit(x))
 }
 
 # produce a dash-separated filename by replacing non-alnum chars with -
 dash_filename = function(
   string, pattern = '[^[:alnum:]]+',
-  pre = getOption('blogdown.filename.pre_processor', identity)
+  pre = get_option('blogdown.filename.pre_processor', identity)
 ) {
   tolower(gsub('^-+|-+$', '', gsub(pattern, '-', pre(string))))
 }
@@ -453,7 +616,7 @@ post_slug = function(x) {
 }
 
 use_bundle = function() {
-  getOption('blogdown.new_bundle', generator() == 'hugo' && hugo_available('0.32'))
+  get_option('blogdown.new_bundle', generator() == 'hugo' && hugo_available('0.32'))
 }
 
 # don't add slugs to posts when creating new posts as bundles and permalinks is
@@ -461,16 +624,18 @@ use_bundle = function() {
 auto_slug = function() {
   if (!use_bundle()) return(TRUE)
   cfg = load_config()
-  if (length(cfg[['permalinks']]) > 0) return(TRUE)
-  con = attr(cfg, 'config_content')
-  length(grep('permalinks', con)) > 0
+  !is.null(cfg[['permalinks']])
 }
 
 trim_ws = function(x) gsub('^\\s+|\\s+$', '', x)
 
 run_script = function(script, ...) {
-  if (file_exists(script) && Rscript(c(shQuote(script), ...)) != 0)
+  if (!empty_script(script) && xfun::Rscript(c(shQuote(script), ...)) != 0)
     stop('Failed to run ', script)
+}
+
+empty_script = function(file) {
+  !file_exists(file) || length(grep('^\\s*#', read_utf8(file), invert = TRUE)) == 0
 }
 
 expand_grid = function(...) {
@@ -488,7 +653,7 @@ rmd_pattern = '[.][Rr](md|markdown)$'
 md_pattern  = '[.][Rr]?(md|markdown)$'
 
 # scan YAML metadata of all Rmd/md files
-scan_yaml = function(dir = 'content') {
+scan_yaml = function(dir = 'content', warn = TRUE) {
   if (missing(dir)) dir = switch(generator(),
     hugo = 'content', jekyll = '.', hexo = 'source'
   )
@@ -500,8 +665,12 @@ scan_yaml = function(dir = 'content') {
     yaml = yaml[-c(1, length(yaml))]
     if (length(yaml) == 0) return()
     tryCatch(yaml::yaml.load(paste(yaml, collapse = '\n')), error = function(e) {
-      warning("Cannot parse the YAML metadata in '", f, "'")
-      NULL
+      if (warn) {
+        warning("Cannot parse the YAML metadata in '", f, "': ", e$message)
+        NULL
+      } else {
+        structure(list(), yaml_error = e)
+      }
     })
   })
   setNames(res, files)
@@ -550,7 +719,7 @@ find_yaml = function(field = character(), value = character(), open = FALSE) {
   }))))
   n = length(files)
   if (n == 0) return(invisible(files))
-  if (open) for (f in files) open_file(f)
+  if (open) for (f in files) open_file(f, TRUE)
   files
 }
 
@@ -602,7 +771,7 @@ yaml_load = function(x) yaml::yaml.load(
       # continue coerce into vector because many places of code already assume this
       if (length(x) > 0) {
         x = unlist(x, recursive = FALSE)
-        attr(x, 'yml_type') = 'seq'
+        if (!is.null(x)) attr(x, 'yml_type') = 'seq'
       }
       x
     }
@@ -644,7 +813,7 @@ append_yaml = function(x, value = list()) {
 # particular order, and optionally remove empty fields
 modify_yaml = function(
   file, ..., .order = character(), .keep_fields = NULL,
-  .keep_empty = getOption('blogdown.yaml.empty', TRUE)
+  .keep_empty = get_option('blogdown.yaml.empty', TRUE)
 ) {
   x = read_utf8(file)
   res = split_yaml_body(x)
@@ -716,7 +885,8 @@ if (is_windows()) system2 = function(command, args = character(), stdout = '', .
     })
   )
 
-  if ((res <- base::system2(command, args, ...)) == 0) return(invisible(res))
+  if ((res <- base::system2(command, args, stdout = stdout, ...)) == 0)
+    return(invisible(res))
 
   if ((res <- system(cmd)) == 0) {
     options(blogdown.windows.shell = 'system')
@@ -760,18 +930,44 @@ args_string = function(...) {
   }
 }
 
-is_rstudio_server = local({
+rstudio_mode = local({
   x = NULL
   function() {
     if (!is.null(x)) return(x)
     x <<- tryCatch(
-      tolower(rstudioapi::versionInfo()$mode) == 'server',
-      error = function(e) FALSE
+      tolower(rstudioapi::versionInfo()$mode),
+      error = function(e) ''
     )
   }
 })
 
-tweak_hugo_env = function() {
+is_rstudio = function() rstudio_mode() != ''
+is_rstudio_server = function() rstudio_mode() == 'server'
+
+# tweak some env vars when building a site or running the hugo server
+tweak_hugo_env = function(server = TRUE) {
+  # set baseURL properly when it doesn't contain protocol or domain:
+  # https://github.com/gohugoio/hugo/issues/7823 (add example.org/ to it); or
+  # when relativeURLs = true, set baseURL to /
+  config = load_config()
+  b = get_config('baseurl', '/', config)
+  c1 = b != '/' && !grepl('^https?://[^/]+', b)
+  c2 = get_config('relativeurls', FALSE, config)
+  if (c2 || c1) {
+    b = sub('^/', '', b)
+    if (server) b = paste0('https://example.org/', b)
+    Sys.setenv(HUGO_BASEURL = if (c2) '/' else b)
+    do.call(
+      on.exit, list(substitute(Sys.unsetenv('HUGO_BASEURL')), add = TRUE),
+      envir = parent.frame()
+    )
+  }
+
+  if (!server) return()
+
+  # RStudio Server uses a proxy like http://localhost:8787/p/56a946ed/ for
+  # http://localhost:4321, so we must use relativeURLs = TRUE:
+  # https://github.com/rstudio/blogdown/issues/124
   if (!is_rstudio_server()) return()
   Sys.setenv(HUGO_RELATIVEURLS = 'true')
   do.call(
@@ -795,9 +991,81 @@ get_subdirs = function() {
 
   # exclude dirs that contain index.??? files
   files = files[!i]
-  for (d in dirname(files[xfun::sans_ext(basename(files)) == 'index'])) {
+  for (d in dirname(files[bundle_index(files)])) {
     dirs = dirs[substr(dirs, 1, nchar(d)) != d]
   }
 
-  union(dirs, getOption('blogdown.subdir', 'post'))
+  # for multilingual sites, remove language prefixes from dirs
+  if (length(lang <- get_lang())) {
+    dirs = gsub(sprintf('^[a-z]{%s}(/|$)', nchar(lang)), '', dirs)
+  }
+
+  unique(dirs)
 }
+
+# is a file the index page of a leaf bundle? i.e., index.*; the filename may
+# also contain language code, e.g., index.fr.Rmd
+bundle_index = function(x, ext = TRUE) {
+  x = basename(x)
+  if (ext) x = xfun::sans_ext(x)
+  grepl(bundle_regex(), x)
+}
+
+bundle_regex = function(x = '$') paste0('^index([.][a-z]{2})?', x)
+
+xfun_session_info = function() {
+  tryCatch(paste('Hugo version:', hugo_version()), error = function(e) NULL)
+}
+
+clean_hugo_cache = function() {
+  if (!file.exists(tmp <- Sys.getenv('TMPDIR'))) return()
+  # clean up the hugo cache dir during R CMD check
+  if (xfun::is_R_CMD_check())
+    unlink(file.path(tmp, 'hugo_cache'), recursive = TRUE)
+}
+
+unicode_capable = local({
+  ok = NULL; x = '\u25ba'  # a test Unicode character
+  function() {
+    if (is.null(ok)) ok <<- identical(capture.output(cat(x)), x)
+    ok
+  }
+})
+
+yes_no = function(question, prompt = if (unicode_capable()) '\u25ba ' else '> ') {
+  interactive() && tolower(substr(readline(paste0(prompt, question, ' (y/n) ')), 1, 1)) == 'y'
+}
+
+source_file = function(...) sys.source(..., chdir = TRUE, keep.source = FALSE)
+
+source_profile = function(dir, ...) {
+  if (file_exists(f <- file.path(dir, '.Rprofile'))) source_file(f, ...)
+}
+
+# treat the special value I(NA) as NULL; see .onLoad()
+get_option = function(x, default = NULL) na2null(getOption(x), default)
+
+na_null = I(NA)
+na2null = function(x, default = NULL) {
+  if (is.null(x) || identical(x, I(NA))) default else x
+}
+
+# global options in blogdown that are likely to be useful to some users
+.options = local({
+  g = generator()
+  i = c(
+    'filename.pre_processor', 'files_filter', 'generator', 'initial_files',
+    'knit.on_save', 'method', 'rename_file', 'serve_site.startup', 'server.timeout',
+    'subdir_fun', 'time_diff', 'warn.future', 'widgetsID', 'yaml.empty',
+    paste0(g, '.server'),
+    if (g == 'hugo') c(
+      'hugo.args', 'hugo.dir', 'hugo.version', 'new_bundle', 'server.wait'
+    )
+  )
+  # default them to I(NA) instead of NULL for reasons explained in .onLoad()
+  x = setNames(rep(list(na_null), length(i)), i)
+  x = c(x, list(author = get_author(), subdir = 'post', title_case = FALSE, ext = '.md'))
+  names(x) = paste0('blogdown.', names(x))
+  x = x[sort(names(x))]
+  x
+})
