@@ -32,14 +32,16 @@ check_config = function() {
   config = load_config()
   f = find_config()
   msg_init('Checking ', f)
-  open_file(f)
+  okay = TRUE
 
   msg_next('Checking "baseURL" setting for Hugo...')
   base = index_ci(config, 'baseurl')
   if (is_example_url(base)) {
     msg_todo('Set "baseURL" to "/" if you do not yet have a domain.')
+    okay = FALSE
   } else if (identical(base, '/')) {
     msg_todo('Update "baseURL" to your actual URL when ready to publish.')
+    okay = FALSE
   } else {
     msg_okay('Found baseURL = "', base, '"; nothing to do here!')
   }
@@ -48,13 +50,16 @@ check_config = function() {
   ignore = c('\\.Rmd$', '\\.Rmarkdown$', '_cache$', '\\.knit\\.md$', '\\.utf8\\.md$')
   if (is.null(s <- config[['ignoreFiles']])) {
     msg_todo('Set "ignoreFiles" to ', xfun::tojson(ignore))
+    okay = FALSE
   } else if (!all(ignore %in% s)) {
     msg_todo(
       'Add these items to the "ignoreFiles" setting: ',
       gsub('^\\[|\\]$', '', xfun::tojson(I(setdiff(ignore, s))))
     )
+    okay = FALSE
   } else if ('_files$' %in% s) {
     msg_todo('Remove "_files$" from "ignoreFiles"')
+    okay = FALSE
   } else {
     msg_okay('"ignoreFiles" looks good - nothing to do here!')
   }
@@ -65,6 +70,7 @@ check_config = function() {
     if (is.null(h) || h == 'goldmark') {
       msg_next("You are using the Markdown renderer 'goldmark'.")
       config_goldmark(f)
+      okay = FALSE
     } else if (!is.null(h)) {
       msg_next("You are using the Markdown renderer '", h, "'.")
       msg_okay('No todos now. If you install a new Hugo version, re-run this check.')
@@ -72,6 +78,7 @@ check_config = function() {
   } else {
     msg_okay('All set!', if (!is.null(s)) ' Found the "unsafe" setting for goldmark.')
   }
+  open_file(f, open = interactive() && !okay)
   msg_done(f)
 }
 
@@ -97,26 +104,54 @@ check_gitignore = function() {
     'Remove items from ', f, ': ', paste(x[i], collapse = ', ')
   ) else msg_okay('Nothing to see here - found no items to remove.')
 
+  msg_next('Checking for items to change...')
+  # do not ignore these folders recursively (need to add a leading slash)
+  x2 = c('blogdown', 'public', 'public/', 'resources')
+  if (any(i <- x %in% x2)) msg_todo(
+    'Change items in ', f, ': ', paste(sprintf('%s -> /%s', x[i], x[i]), collapse = ', ')
+  ) else msg_okay('Nothing to see here - found no items to change.')
+
   msg_next('Checking for items you can safely ignore...')
-  x2 = c('.DS_Store', 'Thumbs.db')
-  if (any(i <- x %in% x2))
+  x3 = c('.DS_Store', 'Thumbs.db')
+  if (any(i <- x %in% x3))
     msg_okay('Found! You have safely ignored: ', paste(x[i], collapse = ', '))
-  x3 = setdiff(x2, x)
-  if (length(x3)) msg_todo('You can safely add to ', f, ': ', paste(x3, collapse = ', '))
+  x4 = setdiff(x3, x)
+  if (length(x4)) msg_todo('You can safely add to ', f, ': ', paste(x4, collapse = ', '))
 
   if (file_exists('netlify.toml')) {
     msg_next('Checking for items to ignore if you build the site on Netlify...')
-    x4 = c('public', 'resources')
-    if (any(i <- x %in% x4))
+    x5 = c('/public/', '/resources/')
+    if (any(i <- x %in% x5))
       msg_okay('Found! You have safely ignored: ', paste(x[i], collapse = ', '))
-    x5 = setdiff(x4, x)
-    if (length(x5)) {
+    x6 = setdiff(x5, x)
+    if (length(x6)) {
       msg_todo(
         'When Netlify builds your site, you can safely add to ', f, ': ',
-        paste(x5, collapse = ', ')
+        paste(x6, collapse = ', ')
       )
     }
   }
+
+  if (Sys.which('git') != '' && system2_quiet('git', 'status') == 0) {
+    msg_next('Checking for files required by blogdown but not committed...')
+    # currently only one but may have more in future
+    x7 = c('layouts/shortcodes/blogdown/postref.html')
+    x8 = NULL
+    for (f in x7) {
+      if (!file_exists(f)) next
+      if (system2_quiet('git', c('ls-files', '--error-unmatch', f)) != 0)
+        x8 = c(x8, f)
+    }
+    if (n <- length(x8)) {
+      msg_todo(
+        'Found ', n, ' file', if (n > 1) 's', ' that should be committed in GIT:\n\n',
+        indent_list(x8)
+      )
+    } else {
+      msg_okay('Great! Did not find such files.')
+    }
+  }
+
   msg_done(f)
 }
 
@@ -201,15 +236,17 @@ check_netlify = function() {
     msg_todo(f, ' was not found. Use blogdown::config_netlify() to create file.')
   )
   cfg = find_config()
-  open_file(f)
   x = read_toml(f)
   v = x$context$production$environment$HUGO_VERSION
   v2 = as.character(hugo_version())
   if (is.null(v)) v = x$build$environment$HUGO_VERSION
 
+  okay = TRUE
+
   if (is.null(v)) {
     msg_next('HUGO_VERSION not found in ', f, '.')
     msg_todo('Set HUGO_VERSION = ', v2, ' in [build] context of ', f, '.')
+    okay = FALSE
   } else {
     msg_okay('Found HUGO_VERSION = ', v, ' in [build] context of ', f, '.')
     msg_next('Checking that Netlify & local Hugo versions match...')
@@ -231,6 +268,7 @@ check_netlify = function() {
         'and set options(blogdown.hugo.version = "', v, '") in .Rprofile to pin ',
         'this Hugo version (also remember to restart R).'
       )
+      okay = FALSE
     }
   }
 
@@ -246,11 +284,12 @@ check_netlify = function() {
         '" (', if (p3) "Hugo's default" else c('as set in ', cfg), ').'
       )
       msg_todo('Open ', f, ' and under [build] set publish = "', p2, '".')
+      okay = FALSE
     } else {
       msg_okay('Good to go - blogdown and Netlify are using the same publish directory: ', p2)
     }
   }
-
+  open_file(f, interactive() && !okay)
   msg_done(f)
 }
 
@@ -324,9 +363,8 @@ check_content = function() {
   msg_next('Checking for .html/.md files to clean up...')
   if (n <- length(files <- list_duplicates())) {
     msg_todo(
-      'Found ', n, ' duplicated plain Markdown and .html output file',
-      if (n > 1) 's', ':\n\n', indent_list(files), '\n\n',
-      "  To fix, run blogdown::clean_duplicates(preview = FALSE)."
+      'Found ', n, ' duplicate output file', if (n > 1) 's', ':\n\n', indent_list(files),
+      '\n\n  To fix, run blogdown::clean_duplicates(preview = FALSE).'
     )
   } else {
     msg_okay('Found 0 duplicate .html output files.')
@@ -394,8 +432,14 @@ edit_draft = function(files) {
 }
 
 list_duplicates = function() in_root({
-  x = with_ext(list_rmds(pattern = '[.](md|markdown)$'), 'html')
-  x[file_exists(x)]
+  # .md/.markdown should not have .html output files
+  x1 = with_ext(list_rmds(pattern = '[.](md|markdown)$'), 'html')
+  # due to the bug #568, foo.html could be left behind when foo.Rmd is moved to
+  # foo/index.Rmd; the leftover foo.html should be deleted
+  x2 = paste0(dirname(list_rmds(pattern = paste0('^index', rmd_pattern))), '.html')
+  x2 = x2[!file_exists(with_ext(x2, 'Rmd'))]
+  x = c(x1, x2)
+  x = sort(x[file_exists(x)])
 })
 
 #' Clean duplicated output files
@@ -422,7 +466,7 @@ clean_duplicates = function(preview = TRUE) in_root({
   x = x[file_exists(x)]
   if (length(x)) {
     if (preview) msg_cat(
-      'Found possibly duplicated output files. Run blogdown::clean_duplicates(preview = FALSE)',
+      'Found possibly duplicate output files. Run blogdown::clean_duplicates(preview = FALSE)',
       ' if you are sure they can be deleted:\n\n', indent_list(x), '\n'
     ) else file.remove(x)
   } else {

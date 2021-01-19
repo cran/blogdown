@@ -123,7 +123,10 @@ serve_it = function(pdir = publish_dir(), baseurl = site_base_dir()) {
     args_fun = match.fun(paste0(g, '_server_args'))
     cmd_args = args_fun(host, port)
     if (g == 'hugo') {
-      tweak_hugo_env()
+      # RStudio Server uses a proxy like http://localhost:8787/p/56a946ed/ for
+      # http://localhost:4321, so we must use relativeURLs = TRUE:
+      # https://github.com/rstudio/blogdown/issues/124
+      tweak_hugo_env(server = TRUE, relativeURLs = if (is_rstudio_server()) TRUE)
       if (length(list_rmds(pattern = bundle_regex('.R(md|markdown)$'))))
         create_shortcode('postref.html', 'blogdown/postref')
     }
@@ -131,7 +134,7 @@ serve_it = function(pdir = publish_dir(), baseurl = site_base_dir()) {
     # which will block the R session
     if (!server$daemon) return(system2(cmd, cmd_args))
 
-    pid = if (getOption('blogdown.use.processx', xfun::loadable('processx'))) {
+    pid = if (server_processx()) {
       proc = processx::process$new(cmd, cmd_args, stderr = '|', cleanup_tree = TRUE)
       I(proc$get_pid())
     } else {
@@ -157,14 +160,13 @@ serve_it = function(pdir = publish_dir(), baseurl = site_base_dir()) {
       if (i >= get_option('blogdown.server.timeout', 30)) {
         s = proc_kill(pid)  # if s == 0, the server must have been started successfully
         stop(if (s == 0) c(
-          'Failed to launch the preview of the site. This may be a bug of blogdown. ',
-          'You may file a report to https://github.com/rstudio/blogdown/issues with ',
-          'a reproducible example. Thanks!'
+          'Failed to launch the site preview in ', i, ' seconds. Try to give ',
+          'it more time via the global option "blogdown.server.timeout", e.g., ',
+          'options(blogdown.server.timeout = 600).'
         ) else c(
           'It took more than ', i, ' seconds to launch the server. An error might ',
           'have occurred with ', g, '. You may run blogdown::build_site() and see ',
-          'if it gives more info. If the site is very large and needs more time to ',
-          'be built, set options(blogdown.server.timeout) to a larger value.'
+          'if it gives more info.'
         ), call. = FALSE)
       }
       i = i + 1
@@ -219,6 +221,17 @@ serve_it = function(pdir = publish_dir(), baseurl = site_base_dir()) {
 
     return(invisible())
   }
+}
+
+server_processx = function() {
+  v = get_option('blogdown.server.verbose', FALSE)
+  # to see verbose output, don't use processx but xfun::bg_process() instead;
+  # TODO: we may use the polling method in #555 to have processx output, too
+  if (v) {
+    options(xfun.bg_process.verbose = TRUE)
+    return(FALSE)
+  }
+  getOption('blogdown.use.processx', xfun::loadable('processx'))
 }
 
 jekyll_server_args = function(host, port) {

@@ -1,7 +1,7 @@
 Package: blogdown
 Type: Package
 Title: Create Blogs and Websites with R Markdown
-Version: 1.0
+Version: 1.1
 Authors@R: c(
     person("Yihui", "Xie", role = c("aut", "cre"), email = "xie@yihui.name", comment = c(ORCID = "0000-0003-0645-5666")),
     person("Christophe", "Dervieux", role = "aut", email = "cderv@rstudio.com", comment = c(ORCID = "0000-0003-4474-2498")),
@@ -52,7 +52,7 @@ SystemRequirements: Hugo (<https://gohugo.io>) and Pandoc
 RoxygenNote: 7.1.1
 Encoding: UTF-8
 NeedsCompilation: no
-Packaged: 2021-01-08 22:57:51 UTC; yihui
+Packaged: 2021-01-19 17:06:43 UTC; yihui
 Author: Yihui Xie [aut, cre] (<https://orcid.org/0000-0003-0645-5666>),
   Christophe Dervieux [aut] (<https://orcid.org/0000-0003-4474-2498>),
   Alison Presmanes Hill [aut] (<https://orcid.org/0000-0002-8082-1890>),
@@ -84,4 +84,4 @@ Author: Yihui Xie [aut, cre] (<https://orcid.org/0000-0003-0645-5666>),
   RStudio, PBC [cph]
 Maintainer: Yihui Xie <xie@yihui.name>
 Repository: CRAN
-Date/Publication: 2021-01-09 06:30:26 UTC
+Date/Publication: 2021-01-19 18:30:03 UTC

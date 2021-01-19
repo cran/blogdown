@@ -46,18 +46,26 @@ hugo_available = function(version = '0.0.0', exact = FALSE) {
 
 #' @param local Whether to build the site for local preview (if \code{TRUE}, all
 #'   drafts and future posts will also be built).
+#' @param args A character vector of command-line arguments to be passed to
+#'   \command{hugo}, e.g., \code{c("--minify", "--quiet")}.
+#' @param baseURL,relativeURLs Custom values of \code{baseURL} and
+#'   \code{relativeURLs} to override Hugo's default and the settings in the
+#'   site's config file.
 #' @export
 #' @describeIn hugo_cmd Build a plain Hugo website. Note that the function
 #'   \code{\link{build_site}()} first compiles Rmd files, and then calls Hugo
 #'   via \code{hugo_build()} to build the site.
-hugo_build = function(local = FALSE) {
+hugo_build = function(
+  local = FALSE, args = getOption('blogdown.hugo.args'),
+  baseURL = NULL, relativeURLs = NULL
+) {
   config = load_config()
   # Hugo 0.48 generates an ugly empty resources/ dir in the root dir
   on.exit(del_empty_dir('resources'), add = TRUE)
-  tweak_hugo_env(FALSE)
+  tweak_hugo_env(baseURL, relativeURLs)
+
   hugo_cmd(c(
-    if (local) c('-D', '-F'),
-    get_option('blogdown.hugo.args'),
+    if (local) c('-D', '-F'), na2null(args),
     '-d', shQuote(publish_dir(config)), theme_flag(config)
   ))
 }
@@ -345,6 +353,14 @@ install_theme = function(
     newdir = sub(tmpdir, '.', zipdir, fixed = TRUE)
     newdir = gsub('-[a-f0-9]{12,40}$', '', newdir)
     newdir = gsub(sprintf('-%s$', branch), '', newdir)
+    # if tmpdir and zipdir are identical, that often means the archive was
+    # extracted to the root dir of tmpdir (i.e. the theme files are compressed
+    # directly into an archive, instead of being placed into a folder and that
+    # folder is compressed), in which case we let newdir be the theme name; one
+    # example is https://stackoverflow.com/q/65702805/559676
+    if (newdir == '.') {
+      newdir = if (theme_is_url) branch else basename(theme)
+    }
     if (!force && dir_exists(newdir)) stop(
       'The theme already exists. Try install_theme("', theme, '", force = TRUE) ',
       'after you read the help page ?blogdown::install_theme.', call. = FALSE
@@ -740,17 +756,27 @@ bundle_site = function(dir = site_root(), output) {
     )
   }
   files = list_files(file.path(output, 'content'), md_pattern)
+  # if .Rmd has .html output, also move .html
+  files2 = with_ext(files, 'html')
+  files = c(files, files2[file_exists(files2)])
   bases = xfun::sans_ext(files)
   i = !basename(bases) %in% c('index', '_index')
   files = files[i]; bases = bases[i]
   for (b in unique(bases)) dir_create(b)
   files2 = file.path(bases, paste('index', xfun::file_ext(files), sep = '.'))
-  i = file.copy(files, files2)
+  # also move *_files/ under static/ and *_cache/ under blogdown/
+  f1 = paste0(sub('^(.*)?/content/', '\\1/static/', bases), '_files')
+  f2 = paste0(sub('^(.*)?/content/', '\\1/blogdown/', bases), '_cache')
+  f3 = unique(c(f1, f2))
+  f4 = file.path(bases, gsub('.*_', 'index_', f3))
+  i = dir_exists(f3)
+  files = c(files, f3[i]); files2 = c(files2, f4[i])
+  # rename foo.Rmd to foo/index.Rmd; foo_files/ to foo/index_files; etc.
+  i = file.rename(files, files2)
   if (any(i)) {
     message(
       'Moved these files into leaf bundles:\n\n',
       paste('*', files[i], '->', files2[i], collapse = '\n')
     )
-    unlink(files[i])
   }
 }

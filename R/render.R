@@ -63,8 +63,9 @@
 #'   blogdown::filter_newfile}, \code{build_rmd = 'timestamp'} is equivalent to
 #'   \code{build_rmd = blogdown::filter_timestamp}, and \code{build_rmd =
 #'   'md5sum'} is equivalent to \code{build_rmd = blogdown::filter_md5sum}.
+#' @param ... Other arguments to be passed to \code{\link{hugo_build}()}.
 #' @export
-build_site = function(local = FALSE, method, run_hugo = TRUE, build_rmd = FALSE) {
+build_site = function(local = FALSE, method, run_hugo = TRUE, build_rmd = FALSE, ...) {
   if (!missing(method)) {
     (if (interactive()) stop else warning)(
       "The 'method' argument has been deprecated. Please set the method via ',
@@ -89,7 +90,7 @@ build_site = function(local = FALSE, method, run_hugo = TRUE, build_rmd = FALSE)
     }
     build_rmds(files)
   }
-  if (run_hugo) on.exit(hugo_build(local), add = TRUE)
+  if (run_hugo) on.exit(hugo_build(local, ...), add = TRUE)
   on.exit(run_script('R/build2.R', as.character(local)), add = TRUE)
   invisible()
 }
@@ -231,11 +232,12 @@ process_markdown = function(res, x = read_utf8(res)) {
     read_utf8(f)
   })
   # protect math expressions in backticks
-  x = xfun::protect_math(x)
+  if (get_option('blogdown.protect.math', TRUE)) x = xfun::protect_math(x)
   # remove the special comments from HTML dependencies
   x = gsub('<!--/?html_preserve-->', '', x)
-  # render citations
-  if (length(grep('^(references|bibliography):($| )', x))) {
+  # render elements that are not commonly supported by Markdown renderers other
+  # than Pandoc, e.g., citations and raw blocks
+  if (run_pandoc(x)) {
     # temporary .md files to generate citations
     mds = replicate(2, wd_tempfile('.md~', pattern = 'citation'))
     on.exit(unlink(mds), add = TRUE)
@@ -248,6 +250,12 @@ process_markdown = function(res, x = read_utf8(res)) {
     x = c(bookdown:::fetch_yaml(x), '', read_utf8(mds[2]))
   }
   x
+}
+
+run_pandoc = function(x) {
+  get_option('blogdown.process_markdown', FALSE) ||
+    length(grep('^(references|bibliography):($| )', x)) ||
+    length(grep('^[`]{3,}\\{=[[:alnum:]]+}$', x))
 }
 
 # given the content of a .html file: replace content/*_files/figure-html with

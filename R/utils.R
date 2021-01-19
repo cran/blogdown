@@ -7,7 +7,7 @@ site_base_dir = function() {
   # baseurl is not meaningful when using relative URLs
   if (get_config('relativeurls', FALSE, config)) return('/')
   x = get_config('baseurl', '/', config)
-  x = gsub('^https?://[^/]+', '', x)
+  x = gsub('^(https?:)?//[^/]+', '', x)
   if (x == '') x = '/'
   if (!grepl('^/', x)) x = paste0('/', x)
   x
@@ -128,7 +128,7 @@ render_new = function(f) xfun::Rscript_call(
 #' not have corresponding output files, e.g., an \file{.Rmd} file that doesn't
 #' have the \file{.html} output file.
 #'
-#' The function \code{timestamp_filer()} compares the modification time of an
+#' The function \code{filter_timestamp()} compares the modification time of an
 #' Rmd file with that of its output file, and returns the path of a file if it
 #' is newer than its output file by \code{N} seconds (or if the output file does
 #' not exist), where \code{N} is obtained from the R global option
@@ -178,16 +178,6 @@ filter_md5sum = function(files, db = 'blogdown/md5sum.txt') {
   one[i, 2] = one[i, 3]  # update checksums
   write.table(one[, 1:2], db, row.names = FALSE)
   files
-}
-
-# TODO: remove them in the future
-md5sum_filter = function(...) {
-  warning('The function md5sum_filter() has been renamed to filter_md5sum()')
-  filter_md5sum(...)
-}
-timestamp_filter = function(...) {
-  warning('The function timestamp_filter() has been renamed to filter_timestamp()')
-  filter_timestamp(...)
 }
 
 # guess if the OS is 64bit
@@ -862,39 +852,7 @@ sort2 = function(x, ...) {
   if (length(x) == 0) x else sort(x, ...)
 }
 
-# on Windows, try system2(), system(), and shell() in turn, and see which
-# succeeds, then remember it (https://github.com/rstudio/blogdown/issues/82)
-if (is_windows()) system2 = function(command, args = character(), stdout = '', ...) {
-  cmd = paste(c(shQuote(command), args), collapse = ' ')
-  intern = isTRUE(stdout)
-  shell2 = function() shell(cmd, mustWork = TRUE, intern = intern)
-
-  i = getOption('blogdown.windows.shell', 'system2')
-  if (i == 'shell') return(shell2())
-  if (i == 'system') return(system(cmd, intern = intern))
-
-  if (intern) return(
-    tryCatch(base::system2(command, args, stdout = stdout, ...), error = function(e) {
-      tryCatch({
-        system(cmd, intern = intern)
-        options(blogdown.windows.shell = 'system')
-      }, error = function(e) {
-        shell2()
-        options(blogdown.windows.shell = 'shell')
-      })
-    })
-  )
-
-  if ((res <- base::system2(command, args, stdout = stdout, ...)) == 0)
-    return(invisible(res))
-
-  if ((res <- system(cmd)) == 0) {
-    options(blogdown.windows.shell = 'system')
-  } else if ((res <- shell2()) == 0) {
-    options(blogdown.windows.shell = 'shell')
-  }
-  invisible(res)
-}
+system2_quiet = function(...) system2(..., stdout = FALSE, stderr = FALSE)
 
 # replace random HTML widgets IDs with incremental numbers
 clean_widget_html = function(x) {
@@ -945,35 +903,19 @@ is_rstudio = function() rstudio_mode() != ''
 is_rstudio_server = function() rstudio_mode() == 'server'
 
 # tweak some env vars when building a site or running the hugo server
-tweak_hugo_env = function(server = TRUE) {
+tweak_hugo_env = function(baseURL = NULL, relativeURLs = NULL, server = FALSE) {
   # set baseURL properly when it doesn't contain protocol or domain:
   # https://github.com/gohugoio/hugo/issues/7823 (add example.org/ to it); or
   # when relativeURLs = true, set baseURL to /
   config = load_config()
-  b = get_config('baseurl', '/', config)
+  b = if (is.null(baseURL)) get_config('baseurl', '/', config) else baseURL
+  b = sub('^/([^/].*)', '\\1', b)
   c1 = b != '/' && !grepl('^https?://[^/]+', b)
-  c2 = get_config('relativeurls', FALSE, config)
-  if (c2 || c1) {
-    b = sub('^/', '', b)
-    if (server) b = paste0('https://example.org/', b)
-    Sys.setenv(HUGO_BASEURL = if (c2) '/' else b)
-    do.call(
-      on.exit, list(substitute(Sys.unsetenv('HUGO_BASEURL')), add = TRUE),
-      envir = parent.frame()
-    )
-  }
+  c2 = if (is.null(relativeURLs)) get_config('relativeurls', FALSE, config) else relativeURLs
+  if (server && c1) b = paste0(if (grepl('^//', b)) 'http:' else 'http://example.org/', b)
 
-  if (!server) return()
-
-  # RStudio Server uses a proxy like http://localhost:8787/p/56a946ed/ for
-  # http://localhost:4321, so we must use relativeURLs = TRUE:
-  # https://github.com/rstudio/blogdown/issues/124
-  if (!is_rstudio_server()) return()
-  Sys.setenv(HUGO_RELATIVEURLS = 'true')
-  do.call(
-    on.exit, list(substitute(Sys.unsetenv('HUGO_RELATIVEURLS')), add = TRUE),
-    envir = parent.frame()
-  )
+  v = set_envvar(c(HUGO_BASEURL = if (c2) '/' else b, HUGO_RELATIVEURLS = tolower(c2)))
+  exit_call(function() set_envvar(v))
 }
 
 get_author = function() {
@@ -1056,7 +998,7 @@ na2null = function(x, default = NULL) {
   i = c(
     'filename.pre_processor', 'files_filter', 'generator', 'initial_files',
     'knit.on_save', 'method', 'rename_file', 'serve_site.startup', 'server.timeout',
-    'subdir_fun', 'time_diff', 'warn.future', 'widgetsID', 'yaml.empty',
+    'server.verbose', 'subdir_fun', 'time_diff', 'warn.future', 'widgetsID', 'yaml.empty',
     paste0(g, '.server'),
     if (g == 'hugo') c(
       'hugo.args', 'hugo.dir', 'hugo.version', 'new_bundle', 'server.wait'
@@ -1069,3 +1011,30 @@ na2null = function(x, default = NULL) {
   x = x[sort(names(x))]
   x
 })
+
+# look up sys.calls() to see if current call is from a certain parent function
+parent_call = function(name) {
+  for (f in sys.calls()) if (f[[1]] == as.symbol(name)) return(TRUE)
+  FALSE
+}
+
+# set env vars from a named character vector, and return the old values of the
+# vars, so they could be restored later
+set_envvar = function(vars) {
+  if (is.null(nms <- names(vars)) || any(nms == '')) stop(
+    "The 'vars' argument must take a named character vector."
+  )
+  vals = Sys.getenv(nms, NA, names = TRUE)
+  i = is.na(vars)
+  suppressWarnings(Sys.unsetenv(nms[i]))
+  if (length(vars <- vars[!i])) do.call(Sys.setenv, as.list(vars))
+  invisible(vals)
+}
+
+# call on.exit in a parent function
+exit_call = function(fun, n = 2) {
+  do.call(
+    on.exit, list(substitute(fun(), list(fun = fun)), add = TRUE),
+    envir = parent.frame(n)
+  )
+}
