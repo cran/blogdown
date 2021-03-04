@@ -49,19 +49,23 @@ check_config = function() {
   msg_next('Checking "ignoreFiles" setting for Hugo...')
   ignore = c('\\.Rmd$', '\\.Rmarkdown$', '_cache$', '\\.knit\\.md$', '\\.utf8\\.md$')
   if (is.null(s <- config[['ignoreFiles']])) {
+    # missing field: add one
     msg_todo('Set "ignoreFiles" to ', xfun::tojson(ignore))
     okay = FALSE
-  } else if (!all(ignore %in% s)) {
-    msg_todo(
-      'Add these items to the "ignoreFiles" setting: ',
-      gsub('^\\[|\\]$', '', xfun::tojson(I(setdiff(ignore, s))))
-    )
-    okay = FALSE
-  } else if ('_files$' %in% s) {
-    msg_todo('Remove "_files$" from "ignoreFiles"')
-    okay = FALSE
   } else {
-    msg_okay('"ignoreFiles" looks good - nothing to do here!')
+    # existing field: check
+    m = !all(ignore %in% s) # check missing values
+    u = '_files$' %in% s    # check unneeded values
+    if (m || u) {
+      if (m) msg_todo(
+        'Add these items to the "ignoreFiles" setting: ',
+        gsub('^\\[|\\]$', '', xfun::tojson(I(setdiff(ignore, s))))
+      )
+      if (u) msg_todo('Remove "_files$" from "ignoreFiles"')
+      okay = FALSE
+    } else {
+      msg_okay('"ignoreFiles" looks good - nothing to do here!')
+    }
   }
 
   msg_next("Checking setting for Hugo's Markdown renderer...")
@@ -137,10 +141,10 @@ check_gitignore = function() {
     # currently only one but may have more in future
     x7 = c('layouts/shortcodes/blogdown/postref.html')
     x8 = NULL
-    for (f in x7) {
-      if (!file_exists(f)) next
-      if (system2_quiet('git', c('ls-files', '--error-unmatch', f)) != 0)
-        x8 = c(x8, f)
+    for (i in x7) {
+      if (!file_exists(i)) next
+      if (system2_quiet('git', c('ls-files', '--error-unmatch', i)) != 0)
+        x8 = c(x8, i)
     }
     if (n <- length(x8)) {
       msg_todo(

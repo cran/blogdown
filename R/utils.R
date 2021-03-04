@@ -114,8 +114,8 @@ build_dir = function(dir = '.', force = FALSE, ignore = '[.]Rproj$') {
 }
 
 # render Rmd in a new R session
-render_new = function(f) xfun::Rscript_call(
-  rmarkdown::render, list(f, envir = globalenv(), quiet = TRUE),
+render_new = function(f, quiet = TRUE) xfun::Rscript_call(
+  rmarkdown::render, list(f, envir = globalenv(), quiet = quiet),
   fail = c('Failed to render ', f)
 )
 
@@ -286,7 +286,8 @@ find_config = function(files = config_files(), error = TRUE) {
 site_root = function(config = config_files(), .site_dir = NULL) {
   if (!is.null(root <- opts$get('site_root'))) return(root)
   owd = getwd(); on.exit(setwd(owd), add = TRUE)
-  # If starting point has been provided change to this directory
+  # if starting point has been provided, change to this directory
+  if (is.null(.site_dir)) .site_dir = get_option('blogdown.site_root')
   if (!is.null(.site_dir)) setwd(.site_dir)
   paths = NULL
   while (length(find_config(config, error = FALSE)) == 0) {
@@ -914,7 +915,13 @@ tweak_hugo_env = function(baseURL = NULL, relativeURLs = NULL, server = FALSE) {
   c2 = if (is.null(relativeURLs)) get_config('relativeurls', FALSE, config) else relativeURLs
   if (server && c1) b = paste0(if (grepl('^//', b)) 'http:' else 'http://example.org/', b)
 
-  v = set_envvar(c(HUGO_BASEURL = if (c2) '/' else b, HUGO_RELATIVEURLS = tolower(c2)))
+  vars = c(HUGO_BASEURL = if (c2) '/' else b, HUGO_RELATIVEURLS = tolower(c2))
+  if (server) {
+    vars = c(vars, BLOGDOWN_POST_RELREF = 'true')
+    c3 = get_config('ignoreErrors', NA, config)
+    if (is.na(c3)) vars = c(vars, HUGO_IGNOREERRORS = 'error-remote-getjson')
+  }
+  v = set_envvar(vars)
   exit_call(function() set_envvar(v))
 }
 
@@ -997,8 +1004,9 @@ na2null = function(x, default = NULL) {
   g = generator()
   i = c(
     'filename.pre_processor', 'files_filter', 'generator', 'initial_files',
-    'knit.on_save', 'method', 'rename_file', 'serve_site.startup', 'server.timeout',
-    'server.verbose', 'subdir_fun', 'time_diff', 'warn.future', 'widgetsID', 'yaml.empty',
+    'knit.on_save', 'knit.serve_site', 'method', 'rename_file',
+    'serve_site.startup', 'server.timeout', 'server.verbose', 'site_root',
+    'subdir_fun', 'time_diff', 'warn.future', 'widgetsID', 'yaml.empty',
     paste0(g, '.server'),
     if (g == 'hugo') c(
       'hugo.args', 'hugo.dir', 'hugo.version', 'new_bundle', 'server.wait'
@@ -1016,25 +1024,4 @@ na2null = function(x, default = NULL) {
 parent_call = function(name) {
   for (f in sys.calls()) if (f[[1]] == as.symbol(name)) return(TRUE)
   FALSE
-}
-
-# set env vars from a named character vector, and return the old values of the
-# vars, so they could be restored later
-set_envvar = function(vars) {
-  if (is.null(nms <- names(vars)) || any(nms == '')) stop(
-    "The 'vars' argument must take a named character vector."
-  )
-  vals = Sys.getenv(nms, NA, names = TRUE)
-  i = is.na(vars)
-  suppressWarnings(Sys.unsetenv(nms[i]))
-  if (length(vars <- vars[!i])) do.call(Sys.setenv, as.list(vars))
-  invisible(vals)
-}
-
-# call on.exit in a parent function
-exit_call = function(fun, n = 2) {
-  do.call(
-    on.exit, list(substitute(fun(), list(fun = fun)), add = TRUE),
-    envir = parent.frame(n)
-  )
 }

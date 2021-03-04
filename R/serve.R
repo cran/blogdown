@@ -27,8 +27,9 @@
 #' @param ... Arguments passed to \code{servr::\link{server_config}()} (only
 #'   arguments \code{host}, \code{port}, \code{browser}, \code{daemon}, and
 #'   \code{interval} are supported).
-#' @param .site_dir Directory to search for site configuration file
-#' (defaults to \code{getwd()}).
+#' @param .site_dir Directory to search for site configuration file. It defaults
+#'   to \code{getwd()}, and can also be specified via the global option
+#'   \code{blogdown.site_root}.
 #' @note For the Hugo server, the argument \command{--navigateToChanged} is used
 #'   by default, which means when you edit and save a source file, Hugo will
 #'   automatically navigate the web browser to the page corresponding to this
@@ -128,7 +129,7 @@ serve_it = function(pdir = publish_dir(), baseurl = site_base_dir()) {
       # https://github.com/rstudio/blogdown/issues/124
       tweak_hugo_env(server = TRUE, relativeURLs = if (is_rstudio_server()) TRUE)
       if (length(list_rmds(pattern = bundle_regex('.R(md|markdown)$'))))
-        create_shortcode('postref.html', 'blogdown/postref')
+        create_shortcode('postref.html', 'blogdown/postref', is_rstudio_server())
     }
     # if requested not to demonize the server, run it in the foreground process,
     # which will block the R session
@@ -174,6 +175,7 @@ serve_it = function(pdir = publish_dir(), baseurl = site_base_dir()) {
     server$browse()
     # server is correctly started so we record the directory served
     opts$append(served_dirs = root)
+    Sys.setenv(BLOGDOWN_SERVING_DIR = root)
     message(
       'Launched the ', g, ' server in the background (process ID: ', pid, '). ',
       'To stop it, call blogdown::stop_server() or restart the R session.'
@@ -209,7 +211,7 @@ serve_it = function(pdir = publish_dir(), baseurl = site_base_dir()) {
     rebuild(rmd_files <- filter_newfile(list_rmds()))
 
     watch = servr:::watch_dir('.', rmd_pattern, handler = function(files) {
-      rmd_files <<- files
+      rmd_files <<- list_rmds(files = files)
     })
     watch_build = function() {
       # stop watching if stop_server() has cleared served_dirs
@@ -258,6 +260,7 @@ stop_server = function() {
     'Failed to kill the process(es): ', paste(i, collapse = ' '),
     '. You may need to kill them manually.'
   ) else if (!quitting) message('The web server has been stopped.')
+  set_envvar(c('BLOGDOWN_SERVING_DIR' = NA))
   opts$set(pids = NULL, served_dirs = NULL)
 }
 

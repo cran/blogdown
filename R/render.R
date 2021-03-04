@@ -66,15 +66,15 @@
 #' @param ... Other arguments to be passed to \code{\link{hugo_build}()}.
 #' @export
 build_site = function(local = FALSE, method, run_hugo = TRUE, build_rmd = FALSE, ...) {
-  if (!missing(method)) {
-    (if (interactive()) stop else warning)(
-      "The 'method' argument has been deprecated. Please set the method via ',
-      'options(blogdown.method = ). See ?blogdown::build_site for more info."
-    )
-    options(blogdown.method = method)
-  }
-  on.exit(run_script('R/build.R', as.character(local)), add = TRUE)
+  if (!missing(method)) stop(
+    "The 'method' argument has been deprecated. Please set the method via ",
+    "options(blogdown.method = ). See ?blogdown::build_site for more info."
+  )
+
+  knitting = is_knitting()
+  if (!knitting) on.exit(run_script('R/build.R', as.character(local)), add = TRUE)
   if (build_method() == 'custom') return()
+
   if (!xfun::isFALSE(build_rmd)) {
     if (is.character(build_rmd) && length(build_rmd) == 1) {
       build_rmd = switch(
@@ -88,10 +88,11 @@ build_site = function(local = FALSE, method, run_hugo = TRUE, build_rmd = FALSE,
         if (length(files)) get_option('blogdown.files_filter', identity)(files)
       }
     }
-    build_rmds(files)
+    build_rmds(files, knitting)
   }
   if (run_hugo) on.exit(hugo_build(local, ...), add = TRUE)
-  on.exit(run_script('R/build2.R', as.character(local)), add = TRUE)
+  if (!knitting) on.exit(run_script('R/build2.R', as.character(local)), add = TRUE)
+
   invisible()
 }
 
@@ -100,8 +101,11 @@ build_method = function() {
   match.arg(get_option('blogdown.method', methods), methods)
 }
 
-list_rmds = function(dir = content_file(), check = FALSE, pattern = rmd_pattern) {
-  files = list_files(dir, pattern)
+# list and/or filter Rmd file to build
+list_rmds = function(
+  dir = content_file(), check = FALSE, pattern = rmd_pattern, files = NULL
+) {
+  if (is.null(files)) files = list_files(dir, pattern)
   # exclude Rmd that starts with _ (preserve these names for, e.g., child docs)
   # but include _index.Rmd/.md
   files = files[!grepl('^_', basename(files)) | grepl('^_index[.]', basename(files))]
@@ -116,14 +120,26 @@ list_rmds = function(dir = content_file(), check = FALSE, pattern = rmd_pattern)
 # list .md files
 list_mds = function() list_files(content_file(), '[.]md$')
 
+# whether a document is knitted via the Knit button
+is_knitting = function() isTRUE(opts$get('render_one'))
+
 # build R Markdown posts
-build_rmds = function(files) {
+build_rmds = function(files, knitting = is_knitting()) {
+  # emit a message indicating that a file is being knitted when the knitting is
+  # not triggered by the Knit button
+  msg_knit = function(f, start = TRUE) {
+    if (knitting) return()
+    if (start) {
+      message('Rendering ', f, '... ', appendLF = FALSE)
+    } else message('Done.')
+  }
+
   i = xfun::is_sub_path(files, rel_path(content_file()))
   # use rmarkdown::render() when a file is outside the content/ dir
   for (f in files[!i]) {
-    message('Rendering ', f, '... ', appendLF = FALSE)
-    render_new(f)
-    message('Done.')
+    msg_knit(f)
+    render_new(f, !knitting)
+    msg_knit(f, FALSE)
   }
 
   if (length(files <- files[i]) == 0) return()
@@ -167,9 +183,10 @@ build_rmds = function(files) {
     to_md = file_ext(out) != 'html'
     out2 = paste0(out, '~')  # first generate a file with ~ in ext so Hugo won't watch
     copy_output_yml(d)
-    message('Rendering ', f, '... ', appendLF = FALSE)
+    msg_knit(f)
     x = xfun::Rscript_call(
-      build_one, list(f, I(basename(out2)), to_md), fail = c('Failed to render ', f)
+      build_one, list(f, I(basename(out2)), to_md, !knitting),
+      fail = c('Failed to render ', f)
     )
 
     x = encode_paths(x, lib1[2 * i - 1], d, base, to_md, out)
@@ -177,7 +194,7 @@ build_rmds = function(files) {
 
     # when serving the site, pause for a moment so Hugo server's auto navigation
     # can navigate to the output page
-    if ((length(opts$get('served_dirs')) || isTRUE(opts$get('render_one')))) {
+    if (length(opts$get('served_dirs')) || knitting) {
       server_wait()
     }
 
@@ -191,11 +208,11 @@ build_rmds = function(files) {
         append(s, 'draft: true', 1)
       })
     }
-    message('Done.')
+    msg_knit(f, FALSE)
   }
 }
 
-build_one = function(input, output, to_md = file_ext(output) != 'html') {
+build_one = function(input, output, to_md = file_ext(output) != 'html', quiet = TRUE) {
   options(htmltools.dir.version = FALSE)
   setwd(dirname(input))
   input = basename(input)
@@ -203,7 +220,7 @@ build_one = function(input, output, to_md = file_ext(output) != 'html') {
   if (to_md) options(bookdown.output.markdown = TRUE)
   res = rmarkdown::render(
     input, 'blogdown::html_page', output_file = output, envir = globalenv(),
-    quiet = TRUE, run_pandoc = !to_md, clean = !to_md
+    quiet = quiet, run_pandoc = !to_md, clean = !to_md
   )
   x = read_utf8(res)
   if (to_md) x = process_markdown(res, x)
@@ -243,7 +260,7 @@ process_markdown = function(res, x = read_utf8(res)) {
     on.exit(unlink(mds), add = TRUE)
     write_utf8(x, mds[1])
     rmarkdown::pandoc_convert(
-      mds[1], from = 'markdown', to = 'gfm+tex_math_dollars+footnotes', output = mds[2],
+      mds[1], from = 'markdown', to = paste(markdown_format(), collapse = ''), output = mds[2],
       options = c(if (!rmarkdown::pandoc_available('2.11.2')) '--atx-headers', '--wrap=preserve'),
       citeproc = TRUE
     )
@@ -252,10 +269,15 @@ process_markdown = function(res, x = read_utf8(res)) {
   x
 }
 
+markdown_format = function() get_option(
+  'blogdown.markdown.format',
+  c('gfm', if (rmarkdown::pandoc_available('2.10.1')) c('+tex_math_dollars', '+footnotes'))
+)
+
 run_pandoc = function(x) {
-  get_option('blogdown.process_markdown', FALSE) ||
+  !is.null(get_option('blogdown.markdown.format')) ||
     length(grep('^(references|bibliography):($| )', x)) ||
-    length(grep('^[`]{3,}\\{=[[:alnum:]]+}$', x))
+    length(grep('[`]{1,}\\{=[[:alnum:]]+}', x))
 }
 
 # given the content of a .html file: replace content/*_files/figure-html with
@@ -313,9 +335,11 @@ encode_paths = function(x, deps, parent, base = '/', to_md = FALSE, output) {
   x
 }
 
-create_shortcode = function(from, to) in_root({
+create_shortcode = function(
+  from, to, force = getOption('blogdown.update.shortcode', FALSE)
+) in_root({
   to = sprintf('layouts/shortcodes/%s.html', to)
-  if (!getOption('blogdown.update.shortcode', FALSE) && file_exists(to)) return()
+  if (!force && file_exists(to)) return()
   dir_create(dirname(to))
   from = pkg_file('resources', from)
   file.copy(from, to, overwrite = TRUE)
