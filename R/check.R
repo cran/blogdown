@@ -47,7 +47,10 @@ check_config = function() {
   }
 
   msg_next('Checking "ignoreFiles" setting for Hugo...')
-  ignore = c('\\.Rmd$', '\\.Rmarkdown$', '_cache$', '\\.knit\\.md$', '\\.utf8\\.md$')
+  ignore = c(
+    '\\.Rmd$', '\\.Rmarkdown$', '_cache$', '\\.knit\\.md$', '\\.utf8\\.md$',
+    if (length(grep('/renv$', list.dirs()))) c('(^|/)renv$', 'renv\\.lock$')
+  )
   if (is.null(s <- config[['ignoreFiles']])) {
     # missing field: add one
     msg_todo('Set "ignoreFiles" to ', xfun::tojson(ignore))
@@ -316,7 +319,8 @@ check_content = function() {
   msg_next('Checking for validity of YAML metadata in posts...')
   meta = scan_yaml(warn = FALSE)
   files = unlist(lapply(meta, function(m) {
-    attr(m, 'yaml_error')$message
+    if (!is.null(s <- attr(m, 'yaml_error')$message)) return(s)
+    if (length(m) && !is.list(m)) return('YAML metadata is not a list')
   }))
   if (length(files)) {
     msg_todo(
@@ -329,7 +333,7 @@ check_content = function() {
   }
 
   detect = function(field, fun) names(unlist(lapply(
-    meta, function(m) fun(m[[field]])
+    meta, function(m) if (is.list(m)) fun(m[[field]])
   )))
 
   msg_next('Checking for previewed content that will not be published...')
@@ -479,18 +483,34 @@ clean_duplicates = function(preview = TRUE) in_root({
 })
 
 check_garbage_html = function() {
-  res = unlist(lapply(list_files(content_file(), '[.]html$'), function(f) {
+  res = unlist(lapply(list_files('.', '[.]html$'), function(f) {
     if (file.size(f) < 200000) return()
     x = readLines(f, n = 15)
     if (any(x == '<meta name="generator" content="pandoc" />')) return(f)
   }))
-  if (n <- length(res)) {
+  res = sub('^[.]/', '', res)
+  ok = TRUE
+  i = xfun::is_sub_path(res, content_file())
+  if (n <- sum(i)) {
     msg_todo(
       'Found ', n, ' incompatible .html file', if (n > 1) 's',
-      ' introduced by previous blogdown versions:\n\n', action_list(res), '\n\n',
+      ' in the content directory:\n\n', action_list(res[i]), '\n\n',
       '  To fix, run the above command and then blogdown::build_site(build_rmd = "newfile").'
     )
-  } else {
-    msg_okay('Found 0 incompatible .html files to clean up.')
+    ok = FALSE
   }
+  i = xfun::is_sub_path(res, p <- publish_dir())
+  if (n <- sum(i) && any(i1 <- file_exists(f1 <- with_ext(res[i], 'Rmd')))) {
+    i2 = file_exists(f2 <- content_file(substr(f1[i1], nchar(p) + 1, nchar(f1))))
+    if (n <- sum(i2)) {
+      msg_todo(
+        'Found ', n, ' incompatible .html file', if (n > 1) 's',
+        ' in the publish directory:\n\n', action_list(c(res[i][i1][i2], f1[i1])), '\n\n',
+        '  To fix, restart R, run the above command, fix other issues identified ',
+        'by blogdown::check_site(), and then run blogdown::build_site().'
+      )
+      ok = FALSE
+    }
+  }
+  if (ok) msg_okay('Found 0 incompatible .html files to clean up.')
 }
