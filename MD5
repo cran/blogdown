@@ -1,16 +1,16 @@
-b23d58483ceee4c69ad57822f2d4f9c0 *DESCRIPTION
+dbc7c61bb4422a4ff3dac1c81b780cb3 *DESCRIPTION
 90e8919fcb4ee74075f7b91f402c8f29 *NAMESPACE
 3af96a31986d10990f81acd4461b0299 *R/addin.R
-a58c417c748048baf009e4c20234569d *R/check.R
+b7a300e043e0f9e3b1e7fd254830f36f *R/check.R
 25596acfa57a35f798e765268ec46535 *R/clean.R
 2b654428457dc1033258ab79909bc089 *R/format.R
-a85895c5d056e58b623a86d3c1a0f6cd *R/hugo.R
-2ab359902578ab410121e1b6a39f862d *R/install.R
+7609780d37897b961d4260da5172047d *R/hugo.R
+db3739d005d82999bbdec0b5b0634112 *R/install.R
 133e17acfa932e7af6b7a0930d2cc897 *R/package.R
-58ea8513ca5c461fbfda300fd426711d *R/render.R
+2a05eb3a4cb64077b78178f7895bd05f *R/render.R
 5777b0a004f649579f1f80c6f80e4429 *R/serve.R
 a87a195e1dde1b1d09f1437594d4de22 *R/site.R
-8d656a284b55060111f5f621cccb0480 *R/utils.R
+906e4adfa03173aa800a5adad5032eef *R/utils.R
 3c334c3351645b74faa2176d2cbd7fa6 *inst/CITATION
 d5d6991efc8363ceb5a8b67e9f579f2a *inst/NEWS.Rd
 3d9f0f264c6cd40ae24e9e64430a2bcd *inst/resources/2020-12-01-r-rmarkdown.Rmd
@@ -38,7 +38,7 @@ e1f918c275d7fd7d086cf7313240b862 *man/filter_newfile.Rd
 a08a07b8a59acdcf5418f750a97d68c8 *man/find_yaml.Rd
 234539ca35cda3a99e8b282e49847e29 *man/html_page.Rd
 235ce7cde3154df64a440d070912e761 *man/hugo_cmd.Rd
-26cb38c566670b0d75206489faf5b219 *man/install_hugo.Rd
+317851550d50aa293c1f8398fe485d3a *man/install_hugo.Rd
 aa87f833b765a15e18017ecb023774b7 *man/install_theme.Rd
 3130999e1a2ab22f60489d7a57972eff *man/read_toml.Rd
 bef00601a81a73773002e5cdd8037fd7 *man/serve_site.Rd
@@ -49,4 +49,4 @@ b1e4e91b7e9e33634a824541c57a3740 *tests/testit/test-addin.R
 7ca3c03a18200faa9f2c06b696cbf22c *tests/testit/test-install.R
 cfe0446d7db002d053c919e57afc19ef *tests/testit/test-list.R
 50899c7ddbf793848e77613fc3f1c97b *tests/testit/test-render.R
-9aaaa701848c42fbffed5814a22366be *tests/testit/test-utils.R
+233183c8b64f9b0a8824d7275d8d64fd *tests/testit/test-utils.R

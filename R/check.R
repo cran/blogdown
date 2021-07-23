@@ -42,6 +42,9 @@ check_config = function() {
   } else if (identical(base, '/')) {
     msg_todo('Update "baseURL" to your actual URL when ready to publish.')
     okay = FALSE
+  } else if (is_domain_url(base)) {
+    msg_todo('It seems you need to add a protocol (e.g., https://) to your "baseURL".')
+    okay = FALSE
   } else {
     msg_okay('Found baseURL = "', base, '"; nothing to do here!')
   }
@@ -93,6 +96,12 @@ is_example_url = function(url) {
   is.character(url) && grepl(
     '^https?://(www[.])?(example.(org|com)|replace-this-with-your-hugo-site.com)/?', url
   )
+}
+
+# a URL without the http protocol
+is_domain_url = function(url) {
+  is.character(url) && !grepl('(^https?:)?//', url) &&
+    grepl('^((?!-)[A-Za-z0-9-]{1,63}(?<!-)[.])+[A-Za-z]{2,6}(/?|/.*)$', url, perl = TRUE)
 }
 
 #' @details \code{check_gitignore()} checks if necessary files are incorrectly
@@ -468,19 +477,36 @@ clean_duplicates = function(preview = TRUE) in_root({
   x = list_duplicates()
   x1 = with_ext(x, 'Rmd');       i1 = file_exists(x1)
   x2 = with_ext(x, 'Rmarkdown'); i2 = file_exists(x2)
-  # if .Rmd exists, delete .md; if .Rmd does not exist or .Rmarkdown exists,
-  # delete .html
-  x = c(with_ext(x[i1], 'md'), x[i2 | !i1])
+  x = c(
+    # if .Rmd exists using 'html' method then delete '.md'
+    # if .Rmd exists using using 'markdown' method, deletes html
+    with_ext(x[i1], if (build_method() == 'markdown') 'html' else 'md'),
+    # if .Rmd does not exist or .Rmarkdown exists, delete html
+    x[i2 | !i1]
+  )
   x = x[file_exists(x)]
   if (length(x)) {
     if (preview) msg_cat(
       'Found possibly duplicate output files. Run blogdown::clean_duplicates(preview = FALSE)',
       ' if you are sure they can be deleted:\n\n', indent_list(x), '\n'
-    ) else file.remove(x)
+    ) else {
+      file.remove(x)
+      clean_html_deps(x)
+    }
   } else {
     msg_cat('No duplicated output files were found.\n')
   }
 })
+
+# delete unused HTML dependencies like header-attrs (#632)
+clean_html_deps = function(x) {
+  x = grep('[.]html$', x, value = TRUE)
+  if (length(x) == 0) return()
+  x = file.path(paste0(xfun::sans_ext(x), '_files'), 'header-attrs')
+  unlink(x, recursive = TRUE)
+  # delete empty *_files directories
+  for (d in dirname(x)) del_empty_dir(d)
+}
 
 check_garbage_html = function() {
   res = unlist(lapply(list_files('.', '[.]html$'), function(f) {
