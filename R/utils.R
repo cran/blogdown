@@ -413,7 +413,9 @@ read_toml = function(file, x = read_utf8(file), strict = TRUE) {
 #' @export
 #' @rdname read_toml
 write_toml = function(x, output = NULL) {
-  if (!hugo_available()) stop('Hugo is required but not found.')
+  if (!hugo_available('0.37')) stop(
+    'Hugo >= 0.37 is required but not found. Run blogdown::install_hugo()?'
+  )
   f = tempfile('yaml', fileext = '.md'); on.exit(unlink(f), add = TRUE)
   write_utf8(c('---', as.yaml(x), '---'), f)
   hugo_convert_one(f, 'TOML')
@@ -940,7 +942,7 @@ tweak_hugo_env = function(baseURL = NULL, relativeURLs = NULL, server = FALSE) {
 
   vars = c(HUGO_BASEURL = if (c2) '/' else b, HUGO_RELATIVEURLS = tolower(c2))
   if (server) {
-    vars = c(vars, BLOGDOWN_POST_RELREF = 'true')
+    vars = c(vars, HUGO_BLOGDOWN_POST_RELREF = 'true')
     c3 = get_config('ignoreErrors', NA, config)
     # should also ignore error-missing-instagram-accesstoken, but I don't know
     # how to configure ignoreErrors to be an array through the env var

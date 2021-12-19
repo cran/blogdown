@@ -5,7 +5,7 @@
 #' @describeIn hugo_cmd Run an arbitrary Hugo command.
 hugo_cmd = function(...) {
   on.exit(clean_hugo_cache(), add = TRUE)
-  system2(find_hugo(), ...)
+  xfun::system3(find_hugo(), ...)
 }
 
 #' @export
@@ -24,7 +24,7 @@ hugo_version = local({
 })
 
 .hugo_version = function(cmd) {
-  x = system2(cmd, 'version', stdout = TRUE)
+  x = xfun::system3(cmd, 'version', stdout = TRUE)
   r = '^.* v([0-9.]{2,}).*$'
   if (!isTRUE(grepl(r, x))) stop(paste(
     c("Cannot extract the version number from '", cmd, "':\n", x), collapse = '\n'
@@ -225,7 +225,10 @@ new_site = function(
     if (getOption('blogdown.open_sample', TRUE)) open_file(f2)
   }
   if (!file.exists('index.Rmd')) {
-    writeLines(c('---', 'site: blogdown:::blogdown_site', '---'), 'index.Rmd')
+    writeLines(c(
+      '---', 'site: blogdown:::blogdown_site', '---', '',
+      '<!-- This file is for blogdown only. Please do not edit it. -->'
+    ), 'index.Rmd')
     Sys.chmod('index.Rmd', '444')
   }
 
@@ -506,11 +509,9 @@ new_content = function(path, kind = '', open = interactive()) {
     c('new', shQuote(path2), if (kind != '') c('-k', kind), theme_flag()),
     stdout = TRUE
   )
-  if (length(i <- grep(r <- ' created$', file2)) == 1) {
-    file2 = sub(r, '', file2[i], useBytes = TRUE)
+  if (length(i <- grep(r <- '^Content "?|"? created$', file2)) == 1) {
+    file2 = gsub(r, '', file2[i])
     if (!grepl('[.]md$', file2)) file2 = file.path(file2, 'index.md')
-    # on Windows, we may need to encode the stdout of system2() as UTF-8
-    if (!file_exists(file2)) Encoding(file2) = 'UTF-8'
   } else {
     # should the above method fail to identify the newly created .md, search for
     # the new file with brute force

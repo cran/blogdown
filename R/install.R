@@ -109,17 +109,16 @@ install_hugo = function(
     if (os != 'auto') OS = os  # if user has provided the OS name, use that one
     if (is.null(local_file)) {
       if (grepl('^arm', arch)) arch = toupper(arch)  # arm(64) -> ARM(64)
+      # v0.20.3 is a special case: it has 'v' in the filename
       zipfile = sprintf(
-        'hugo_%s%s_%s-%s.%s', ifelse(extended, 'extended_', ''), version, OS, arch, type
+        'hugo_%s%s_%s-%s.%s', ifelse(extended, 'extended_', ''),
+        paste0(if (version == '0.20.3') 'v', version), OS, arch, type
       )
-      # TODO: use the .error argument in xfun 0.29
-      xfun::try_silent(xfun::download_file(paste0(base, zipfile), zipfile, mode = 'wb'))
-      # zipfile may be a plain-text file "Not Found" (9 bytes) in case of 404
-      if (!file_exists(zipfile) || file.size(zipfile) <= 9) stop(
+      xfun::download_file(paste0(base, zipfile), zipfile, mode = 'wb', .error = c(
         'Failed to download ', zipfile, ' from https://github.com/gohugoio/hugo/releases/tag/v',
         version, '. Please check blogdown::hugo_installers("', version, '") for ',
-        'available Hugo installers.', call. = FALSE
-      )
+        'available Hugo installers.'
+      ))
     } else {
       zipfile = local_file
       type = xfun::file_ext(local_file)
@@ -193,17 +192,16 @@ install_hugo_bin = function(exec, version) {
 #' @examplesIf interactive()
 #' blogdown::hugo_installers()
 #' blogdown::hugo_installers('0.89.0')
-#' blogdown::hugo_installers('0.7')
+#' blogdown::hugo_installers('0.17')
 hugo_installers = function(version = 'latest') {
   repo = 'gohugoio/hugo'
   if (version == 'latest') version = xfun::github_releases(repo, 'latest')
   version = sub('^[vV]?', 'v', version)
-  u = sprintf('https://api.github.com/repos/%s/releases/tags/%s', repo, version)
-  res = if (xfun::loadable('jsonlite')) {
-    res = jsonlite::fromJSON(u, FALSE)
+  json = xfun::loadable('jsonlite')
+  res = xfun::github_api(sprintf('/repos/%s/releases/tags/%s', repo, version), raw = !json)
+  res = if (json) {
     lapply(res$assets, `[[`, 'browser_download_url')
   } else {
-    res = xfun::read_utf8(u)
     res = strsplit(res, '"browser_download_url":"')
     xfun::grep_sub('^(https://[^"]+)".*', '\\1', unlist(res))
   }
@@ -339,7 +337,10 @@ uninstall_tip = function(p) {
 find_hugo = local({
   paths = list()  # cache the paths to hugo (there might be multiple versions)
   function(version = getOption('blogdown.hugo.version'), quiet = FALSE) {
-    i = if (is.null(version <- na2null(version))) 'default' else as.character(version)
+    i = if (is.null(version <- na2null(version))) 'default' else {
+      # in case the version number starts with v, remove it
+      version = sub('^[vV]([0-9.]+)$', '\\1', as.character(version))
+    }
     p = paths[[i]]
     if (!is.null(p) && file.exists(exec_path(p))) return(p)
     # if path not found, find it again
