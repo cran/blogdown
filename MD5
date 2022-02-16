@@ -1,16 +1,16 @@
-bd076d3bb6cd82bf1f32c7a4ef6c30ee *DESCRIPTION
-387cfd0a4526b506ff5995553e470bf1 *NAMESPACE
+cbc6fcccd5af95788570d9ff0527af8b *DESCRIPTION
+5d1f1863a702ee3076dd34ef83bac153 *NAMESPACE
 3af96a31986d10990f81acd4461b0299 *R/addin.R
 eea173df5fb2fa4040d75f0e6c1f31f9 *R/check.R
 25596acfa57a35f798e765268ec46535 *R/clean.R
 2b654428457dc1033258ab79909bc089 *R/format.R
-384f7556c85c25d52a6b2ebd8cfb5463 *R/hugo.R
+188cbfaaecadc54a43a03860692a3dd2 *R/hugo.R
 6cbd7897fa2e6895978bf4c531ab8a59 *R/install.R
-133e17acfa932e7af6b7a0930d2cc897 *R/package.R
-f05d65afed03fdb1771dcc20ab6f0829 *R/render.R
+ec96bf3744d74a27803a070e88a44125 *R/package.R
+ea0500b4245e266b4ed27c2d32cf4969 *R/render.R
 8cf2a944972c5cf99bbb3d398f74450f *R/serve.R
 a87a195e1dde1b1d09f1437594d4de22 *R/site.R
-79f958976c39625f3297b96077ccf50e *R/utils.R
+49b411125c27121b8e379891a4f8e2d9 *R/utils.R
 3c334c3351645b74faa2176d2cbd7fa6 *inst/CITATION
 d5d6991efc8363ceb5a8b67e9f579f2a *inst/NEWS.Rd
 3d9f0f264c6cd40ae24e9e64430a2bcd *inst/resources/2020-12-01-r-rmarkdown.Rmd
@@ -34,6 +34,7 @@ bd3a7ebbc59a1f90bda3e409c2a21f59 *man/config_netlify.Rd
 0371a26bf894836fe3ddf57a58a91079 *man/config_vercel.Rd
 abc34746655923b252ce51a462224d06 *man/dep_path.Rd
 9f61581e54ef616639180ec32bd78707 *man/edit_draft.Rd
+5d845b6d44733b1a45a2c323c344f781 *man/figures/logo.svg
 e1f918c275d7fd7d086cf7313240b862 *man/filter_newfile.Rd
 34a4d923afd3e0901a48aac77a0a7985 *man/find_hugo.Rd
 a08a07b8a59acdcf5418f750a97d68c8 *man/find_yaml.Rd
@@ -51,4 +52,4 @@ b1e4e91b7e9e33634a824541c57a3740 *tests/testit/test-addin.R
 7ca3c03a18200faa9f2c06b696cbf22c *tests/testit/test-install.R
 cfe0446d7db002d053c919e57afc19ef *tests/testit/test-list.R
 50899c7ddbf793848e77613fc3f1c97b *tests/testit/test-render.R
-233183c8b64f9b0a8824d7275d8d64fd *tests/testit/test-utils.R
+8145513a2f548090b8385ba2f13529e7 *tests/testit/test-utils.R
