@@ -161,6 +161,7 @@ new_site = function(
   serve = if (interactive()) 'ask' else FALSE
 ) {
   msg_init('Creating your new site')
+  opts$set(site_root = NULL)  # invalidate the previously stored site root
   if (is.na(force)) {
     files = grep(
       '([.]Rproj|/(LICENSE|README)([.][a-z]+)?)$', list_files(dir),
@@ -312,7 +313,7 @@ install_theme = function(
     branch = sub('^@', '', gsub(r, '\\2', theme))
     theme = gsub(r, '\\1', theme)
     # the hugo-academic theme has moved
-    if (theme == 'gcushen/hugo-academic') theme = 'wowchemy/starter-academic'
+    if (theme == 'gcushen/hugo-academic') theme = 'wowchemy/starter-hugo-academic'
     if (branch == '') branch = default_branch(theme, hostname)
   }
 
@@ -387,19 +388,17 @@ install_theme = function(
     file.rename(zipdir, newdir)
     unlink(c(zipfile, file.path(newdir, '*.Rproj')))
     theme = gsub('^[.][\\/]+', '', newdir)
-    if (is_theme) {
-      # we don't need the content/ directory from the theme or config/ if it
-      # already exists in root dir
-      unlink(
-        file.path(theme, c('content', if (dir_exists('../config')) 'config')),
-        recursive = TRUE
-      )
-    } else {
-      # download modules if not a theme, and copy "theme" content to root dir
-      download_modules(file.path(theme, 'go.mod'))
-      file.copy(list.files(theme, full.names = TRUE), '../', recursive = TRUE)
-      unlink(theme, recursive = TRUE)
-    }
+    # download modules if necessary
+    download_modules(file.path(theme, 'go.mod'))
+    # move content/ and config/ to root if they do not already exist there
+    lapply(c('content', 'config'), function(d) {
+      if (!dir_exists(d1 <- file.path(theme, d))) return()
+      if (dir_exists(d2 <- file.path('..', d))) {
+        unlink(d1, recursive = TRUE)
+      } else {
+        file.rename(d1, d2)
+      }
+    })
     in_dir('..', {
       # remove config.toml if config/_default/config.toml exists
       remove_config()
@@ -455,22 +454,14 @@ download_modules = function(mod) {
     tmps <<- c(tmps, tmp <- wd_tempfile())
     utils::untar(gz, exdir = tmp)
     root = file.path(tmp, files[1])
-    # see if a module contains a replace directive
-    r2 = '^replace\\s+(github[.]com/[^[:space:]]+)\\s+=>\\s+(.+?)\\s*$'
-    if (file_exists(f <- file.path(root, 'go.mod')) && length(grep(r2, x2 <- read_utf8(f)))) {
-      lapply(regmatches(x2, regexec(r2, x2)), function(v2) {
-        if (length(v2) < 3) return()
-        dir_create(v2[2])
-        file.copy(list.files(file.path(root, v2[3]), full.names = TRUE), v2[2], recursive = TRUE)
-      })
-    } else {
-      if (v[4] != '') {
-        root = file.path(root, v[4])
-        v[2] = file.path(v[2], v[4])
-      }
-      dir_create(v[2])
-      file.copy(list.files(root, full.names = TRUE), v[2], recursive = TRUE)
+    if (v[4] != '') {
+      root = file.path(root, v[4])
+      v[2] = file.path(v[2], v[4])
     }
+    dir_create(v[2])
+    # in case v[4] contains a tag, e.g., "wowchemy-cms/v5", remove the tag
+    if (!dir_exists(root)) root = dirname(root)
+    file.copy(list.files(root, full.names = TRUE), v[2], recursive = TRUE)
   })
   unlink(with_ext(mod, c('.mod', '.sum')))
 }
@@ -714,8 +705,9 @@ hugo_server_args = function(host, port) {
 #' @export
 #' @examples library(blogdown)
 #'
-#' shortcode('tweet', '1234567')
-#' shortcodes('tweet', as.character(1:5))  # multiple tweets
+#' shortcode('tweet', user='SanDiegoZoo', id='1453110110599868418')
+#' # multiple tweets (id's are fake)
+#' shortcodes('tweet', user='SanDiegoZoo', id=as.character(1:5))
 #' shortcode('figure', src='/images/foo.png', alt='A nice figure')
 #' shortcode('highlight', 'bash', .content = 'echo hello world;')
 #'
