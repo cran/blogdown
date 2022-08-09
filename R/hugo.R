@@ -85,6 +85,18 @@ theme_dir = function(...) {
   if (length(x <- theme_flag()) == 4) file.path(x[2], x[4])
 }
 
+# search for archetypes under the theme dir and all imported modules
+archetypes = function() {
+  if (length(a <- theme_flag()) != 4) return()
+  d = unlist(lapply(load_config()[['module']][['imports']], function(x) {
+    if (is.character(p <- x[['path']])) p
+  }))
+  d = file.path(a[2], c(a[4], d), 'archetypes')
+  d = c('archetypes', d)
+  d = dir(d, full.names = TRUE)
+  paste0(basename(d), ifelse(utils::file_test('-d', d), '/', ''))
+}
+
 change_config = function(name, value) {
   f = find_config()
   x = read_utf8(f)
@@ -225,13 +237,7 @@ new_site = function(
     file.copy(f1, f2)
     if (getOption('blogdown.open_sample', TRUE)) open_file(f2)
   }
-  if (!file.exists('index.Rmd')) {
-    writeLines(c(
-      '---', 'site: blogdown:::blogdown_site', '---', '',
-      '<!-- This file is for blogdown only. Please do not edit it. -->'
-    ), 'index.Rmd')
-    Sys.chmod('index.Rmd', '444')
-  }
+  if (!file_exists('index.Rmd')) create_index()
 
   if (to_yaml) {
     msg_next('Converting all metadata to the YAML format')
@@ -278,6 +284,14 @@ new_site = function(
   invisible(getwd())
 }
 
+create_index = function() {
+  writeLines(c(
+    '---', 'site: blogdown:::blogdown_site', '---', '',
+    '<!-- This file is for blogdown only. Please do not edit it. -->'
+  ), 'index.Rmd')
+  Sys.chmod('index.Rmd', '444')
+}
+
 #' Install a Hugo theme from Github
 #'
 #' Download the specified theme from Github and install to the \file{themes}
@@ -314,7 +328,7 @@ install_theme = function(
     theme = gsub(r, '\\1', theme)
     # the hugo-academic theme has moved
     if (theme == 'gcushen/hugo-academic') theme = 'wowchemy/starter-hugo-academic'
-    if (branch == '') branch = default_branch(theme, hostname)
+    if (branch == '') branch = 'HEAD'
   }
 
   dir_create('themes')
@@ -335,6 +349,18 @@ install_theme = function(
     }
     zipdir = dirname(files)
     zipdir = zipdir[which.min(nchar(zipdir))]
+    # when the repo contains git submodules, we have to use `git clone --recursive`
+    if (file_exists(file.path(zipdir, '.gitmodules'))) {
+      unlink(list_files(zipdir, recursive = FALSE, all.files = TRUE), recursive = TRUE)
+      if (system2('git', c(
+        'clone', '--recursive', '--depth', '1', if (branch != 'HEAD') c('-b', branch),
+        sub('/$', '.git', sub('(https://([^/]+/){3}).*', '\\1', url)), zipdir
+      )) != 0) stop(
+        'The theme contains git submodules, but ', if (Sys.which('git') == '') {
+          'git is not found in your system.'
+        } else 'git failed to clone the repo.'
+      )
+    }
     expdir = file.path(zipdir, 'exampleSite')
     if (length(expdir) == 0) stop(
       'Failed to download or extract the theme from ', url, call. = FALSE
@@ -362,7 +388,7 @@ install_theme = function(
       del_empty_dir(thndir)
     }
     # delete the .Rprofile and .github folder if they exist, since they are unlikely to be useful
-    unlink(file.path(zipdir, c('.Rprofile', '.github')), recursive = TRUE)
+    unlink(file.path(zipdir, c('.Rprofile', '.github', '.git')), recursive = TRUE)
     # check the minimal version of Hugo required by the theme
     if (update_hugo && is_theme) {
       if (!is.null(minver <- read_toml(theme_cfg)[['min_version']])) {
@@ -390,10 +416,11 @@ install_theme = function(
     theme = gsub('^[.][\\/]+', '', newdir)
     # download modules if necessary
     download_modules(file.path(theme, 'go.mod'))
-    # move content/ and config/ to root if they do not already exist there
-    lapply(c('content', 'config'), function(d) {
+    # move content/, config/, etc to root if they do not already exist there
+    lapply(c('content', 'config', 'data', 'assets'), function(d) {
       if (!dir_exists(d1 <- file.path(theme, d))) return()
       if (dir_exists(d2 <- file.path('..', d))) {
+        file.copy(list_files(d1, recursive = FALSE), d2, recursive = TRUE)
         unlink(d1, recursive = TRUE)
       } else {
         file.rename(d1, d2)
@@ -413,29 +440,12 @@ install_theme = function(
   )
 }
 
-# obtain the default branch of a repo from the API
-default_branch = function(repo, hostname = 'github.com') {
-  fallback = function(...) {
-    message(
-      'Unable to obtain the default branch of the repo "', repo,
-      '". Trying the branch "master", which may be inaccurate. You are recommended ',
-      'to specify the branch name after the repo name, e.g., user/repo@branch.'
-    )
-    'master'
-  }
-  tryCatch({
-    x = read_utf8(sprintf('https://api.%s/repos/%s', hostname, repo))
-    x = xfun::grep_sub('.*?\\s*"default_branch":\\s*"([^"]+)",.*', '\\1', x)
-    if (length(x) > 0) x[1] else fallback()
-  }, error = fallback)
-}
-
 # download Hugo modules with R, instead of Go/GIT, so users won't need to
 # install Go or GIT
 download_modules = function(mod) {
   if (!file.exists(mod)) return()
   x = read_utf8(mod)
-  r = '.*?\\b(github.com/([^/]+/[^/]+))/?([^[:space:]]*)\\s+(v[^-]+)-?([^[:space:]]*?-([[:xdigit:]]{12,}))?\\s*.*'
+  r = '.*?\\b(github.com/([^/]+/[^/]+))/?([^[:space:]]*)\\s+(v[^-[:space:]]+)-?([^[:space:]]*?-([[:xdigit:]]{12,}))?\\s*.*'
   gzs = NULL; tmps = NULL  # gz files and temp dirs
   on.exit(unlink(c(gzs, tmps), recursive = TRUE), add = TRUE)
   # x is of the form: github.com/user/repo/folder v0.0.0-2020-e58ee0ffc576;
@@ -443,7 +453,7 @@ download_modules = function(mod) {
   # user/repo; 4. subfolder; 5. version (tag/branch); 6. date+sha; 7. sha
   lapply(regmatches(x, regexec(r, x)), function(v) {
     if (length(v) < 7) return()
-    url = sprintf('https://%s/archive/%s.tar.gz', v[2], if (v[7] == '') v[5] else v[7])
+    url = sprintf('https://%s/archive/%s.tar.gz', v[2], if (v[7] == '') 'HEAD' else v[7])
     gz = paste0(gsub('/', '-', v[3]), '-', basename(url))
     if (!file.exists(gz)) {
       gzs <<- c(gzs, gz)
@@ -500,7 +510,7 @@ new_content = function(path, kind = '', open = interactive()) {
     c('new', shQuote(path2), if (kind != '') c('-k', kind), theme_flag()),
     stdout = TRUE
   )
-  if (length(i <- grep(r <- '^Content "?|"? created$', file2)) == 1) {
+  if (length(i <- grep(r <- '^Content (dir )?"?|"? created$', file2)) == 1) {
     file2 = gsub(r, '', file2[i])
     if (!grepl('[.]md$', file2)) file2 = file.path(file2, 'index.md')
   } else {
@@ -511,8 +521,14 @@ new_content = function(path, kind = '', open = interactive()) {
   }
   if (length(file2) != 1) stop("Failed to create the file '", path, "'.")
   hugo_convert_one(file2)
-  file = with_ext(file2, file_ext(path))
-  if (file != file2) file.rename(file2, file)
+  file = content_file(path)  # the expected location of the new file
+  if (!xfun::same_path(file, file2)) {
+    dir_create(dirname(file))
+    file.rename(file2, file)
+    # after the new file created by hugo is moved, clean up possible empty dirs
+    d = dirname(file2)
+    while (d != '.' && !is.null(xfun::del_empty_dir(d))) d = dirname(d)
+  }
   open_file(file, open)
   file
 }
@@ -607,19 +623,11 @@ new_post = function(
   if (is.null(slug) && auto_slug()) slug = post_slug(file)
   slug = trim_ws(slug)
   if (generator() == 'hugo') file = new_content(file, kind, FALSE) else {
+    file = content_file(file)
     writeLines(c('---', '', '---'), file)
   }
   if (isTRUE(title_case)) title_case = tools::toTitleCase
   if (is.function(title_case)) title = title_case(title)
-  if (get_option('blogdown.warn.future', TRUE)) {
-    if (isTRUE(tryCatch(date > Sys.Date(), error = function(e) FALSE))) warning(
-      'The date of the post is in the future: ', date, '. See ',
-      'https://github.com/rstudio/blogdown/issues/377 for consequences, ',
-      'and see https://alison.rbind.io/post/2019-03-04-hugo-troubleshooting/#dates ',
-      'for a workaround by distinguishing date and publishDate in YAML header. ',
-      'To turn off this warning, set options(blogdown.warn.future = FALSE).'
-    )
-  }
 
   # for categories/tags, use new values if they are not empty, otherwise use old
   # values in the post if they are non-empty (respect archetypes)
