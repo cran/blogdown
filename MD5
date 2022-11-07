@@ -1,4 +1,4 @@
-e5b4a9e6bea161add2570a3e6c180078 *DESCRIPTION
+c72557d22df96db383b6c3982279ffcb *DESCRIPTION
 5d1f1863a702ee3076dd34ef83bac153 *NAMESPACE
 fa1fddd4b472b11cb35e6f92eca38ec8 *R/addin.R
 e7433ab98b15dd0386ab63da2cab40c3 *R/check.R
@@ -7,7 +7,7 @@ e6dfc65dd55cfb881ab7fdbb0307da56 *R/format.R
 072b17aff478c787ec99e7225ee4edf7 *R/hugo.R
 30bba4f401499fbcbfed9a48ba0dc43a *R/install.R
 ec96bf3744d74a27803a070e88a44125 *R/package.R
-99bbdddea41f8ac65e2c882a8ade9465 *R/render.R
+83b143837c6ecf16a34055269aa6be96 *R/render.R
 f41f7db6f2f47458ea44e4aa763283e7 *R/serve.R
 a87a195e1dde1b1d09f1437594d4de22 *R/site.R
 d6397232abb74778b688302032fef221 *R/utils.R
