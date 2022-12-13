@@ -68,7 +68,7 @@ build_site = function(local = FALSE, run_hugo = TRUE, build_rmd = FALSE, ...) {
   if (!knitting) on.exit(run_script('R/build.R', as.character(local)), add = TRUE)
   if (build_method() == 'custom') return()
 
-  if (!xfun::isFALSE(build_rmd)) {
+  if (!isFALSE(build_rmd)) {
     if (is.character(build_rmd) && length(build_rmd) == 1) {
       build_rmd = switch(
         build_rmd, timestamp = filter_timestamp, md5sum = filter_md5sum,
@@ -248,7 +248,7 @@ process_markdown = function(res, x = read_utf8(res)) {
     write_utf8(x, mds[1])
     rmarkdown::pandoc_convert(
       mds[1], from = 'markdown', to = paste(markdown_format(), collapse = ''), output = mds[2],
-      options = c(if (!rmarkdown::pandoc_available('2.11.2')) '--atx-headers', '--wrap=preserve'),
+      options = c('--wrap=preserve', '--preserve-tabs'),
       citeproc = TRUE
     )
     x = c(bookdown:::fetch_yaml(x), '', read_utf8(mds[2]))
