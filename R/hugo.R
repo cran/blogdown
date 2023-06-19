@@ -77,7 +77,7 @@ theme_flag = function(config = load_config()) {
   t = if (length(t) > 0) t[1]
   t = get_config('theme', t, config)
   a = c('--themesDir', d)
-  if (length(t) == 1) a = c(a, '-t', t)
+  if (length(t) == 1) a = c(a, '--theme', t)
   a
 }
 
@@ -110,13 +110,13 @@ change_config = function(name, value) {
   f = find_config()
   x = read_utf8(f)
   b = basename(f)
-  if (b == 'config.toml') {
+  switch(file_ext(b), toml = {
     r = sprintf('^%s\\s*=.+', name)
     v = if (!is.na(value)) paste(name, value, sep = ' = ')
-  } else if (b == 'config.yaml') {
+  }, yaml = {
     r = sprintf('^%s\\s*:.+', name)
     v = if (!is.na(value)) paste(name, value, sep = ': ')
-  }
+  })
   i = grep(r, x, ignore.case = TRUE)
   if (length(i) > 1) stop("Duplicated configuration for '", name, "' in ", f)
   x0 = x
@@ -202,7 +202,7 @@ new_site = function(
   }
   if (is.logical(format)) format = if (format) 'yaml' else 'toml'
   if (hugo_cmd(
-    c('new', 'site', shQuote(path.expand(dir)), if (force) '--force', '-f', format),
+    c('new', 'site', shQuote(path.expand(dir)), if (force) '--force'),
     stdout = FALSE
   ) != 0) return(invisible())
 
@@ -215,7 +215,14 @@ new_site = function(
   if (!empty_dirs) for (d in list.dirs(recursive = FALSE)) del_empty_dir(d)
   if (is.character(theme) && length(theme) == 1 && !is.na(theme)) {
     msg_next('Installing the theme ', theme, ' from ', hostname)
+    # delete hugo.toml if the theme has provided a config file
+    if (file_exists('hugo.toml')) file.rename('hugo.toml', 'hugo.toml~')
     install_theme(theme, theme_example, hostname = hostname)
+    if (length(find_config(error = FALSE)) == 0) {
+      file.rename('hugo.toml~', 'hugo.toml')
+    } else {
+      file.remove('hugo.toml~')
+    }
   }
   # remove the .gitignore that ignores everything under static/:
   # https://github.com/rstudio/blogdown/issues/320
@@ -512,7 +519,7 @@ check_modules = function(dir = '.') {
 remove_config = function() {
   f1 = config_files(); f1 = f1[dirname(f1) == '.']
   # delete config.yaml if config.toml exists
-  if (length(f1) >= 2 && file_exists(f1[1])) unlink(f1[2])
+  if (length(f1) >= 2 && file_exists(f1[1])) unlink(f1[-1])
   f2 = file.path('config', '_default', f1)
   if (any(file_exists(f2))) unlink(f1)
 }

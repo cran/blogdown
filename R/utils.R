@@ -218,7 +218,7 @@ load_config = function() in_root({
 
 read_config = function(f) {
   parser = switch(
-    basename(f), 'config.toml' = read_toml, 'config.yaml' = yaml_load_file
+    file_ext(f), 'toml' = read_toml, 'yaml' = yaml_load_file
   )
   parser(f)
 }
@@ -278,7 +278,7 @@ generator = function() get_option('blogdown.generator', 'hugo')
 # config files for different site generators
 config_files = function(which = generator()) {
   all = list(
-    hugo = c('config.toml', 'config.yaml'),  # only support TOML and YAML (no JSON)
+    hugo = c('hugo.toml', 'hugo.yaml', 'config.toml', 'config.yaml'),  # no support for JSON
     jekyll = '_config.yml',
     hexo = '_config.yml'
   )
