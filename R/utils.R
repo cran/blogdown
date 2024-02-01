@@ -306,7 +306,7 @@ site_root = function(config = config_files(), .site_dir = NULL) {
     w1 = getwd(); w2 = dirname(w1)
     paths = c(paths, w1)
     if (w1 == w2) stop(
-      'Could not find ', paste(config, collapse = ' / '), ' under\n',
+      'Could not find ', paste0("'", config, "'", collapse = ' / '), ' under\n',
       paste('  ', paths, collapse = '\n')
     )
     setwd('..')
@@ -1006,7 +1006,7 @@ clean_hugo_cache = function() {
   if (!file.exists(tmp <- Sys.getenv('TMPDIR'))) return()
   # clean up the hugo cache dir during R CMD check
   if (xfun::is_R_CMD_check())
-    unlink(file.path(tmp, 'hugo_cache'), recursive = TRUE)
+    unlink(file.path(tmp, 'hugo_cache_runner'), recursive = TRUE)
 }
 
 # add the time of now to a date
