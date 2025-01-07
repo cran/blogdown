@@ -343,7 +343,7 @@ install_theme = function(
     branch = sub('^@', '', gsub(r, '\\2', theme))
     theme = gsub(r, '\\1', theme)
     # the hugo-academic theme has moved
-    if (theme == 'gcushen/hugo-academic') theme = 'wowchemy/starter-hugo-academic'
+    if (theme == 'gcushen/hugo-academic') theme = 'HugoBlox/theme-academic-cv'
     if (branch == '') branch = 'HEAD'
   }
 
@@ -698,7 +698,7 @@ hugo_convert = function(to = c('YAML', 'TOML', 'JSON'), unsafe = FALSE, ...) {
 }
 
 #' @param host,port The host IP address and port; see
-#'   \code{servr::\link{server_config}()}.
+#'   \code{servr::\link[servr]{server_config}()}.
 #' @export
 #' @describeIn hugo_cmd Start a Hugo server.
 hugo_server = function(host, port) {
