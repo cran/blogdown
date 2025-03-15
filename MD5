@@ -1,14 +1,14 @@
-ab8c7aac0421158238a1525323ead116 *DESCRIPTION
+df1dcbf41ecde74f15da49877e478652 *DESCRIPTION
 03022ec48a81511cd37a37e4268dac49 *NAMESPACE
 588bb4003b09025c07b6f99452ba186a *R/addin.R
 e7433ab98b15dd0386ab63da2cab40c3 *R/check.R
 25596acfa57a35f798e765268ec46535 *R/clean.R
 6e8d628a198b83d49e31a0bceb9ad850 *R/format.R
-46813e313c09da7c5f01115ba0b8efb9 *R/hugo.R
+500a4773c3a89c3fa9df95d5926e1074 *R/hugo.R
 30bba4f401499fbcbfed9a48ba0dc43a *R/install.R
 422f259d44cb52c396fae3975f38dec1 *R/package.R
 cfe739a1b655a50220cb3b4c96a5c146 *R/render.R
-9689537b539ed523b2f505c96c8b4fed *R/serve.R
+bf7806b8f588a4894055bdc5bc8cc7b0 *R/serve.R
 a87a195e1dde1b1d09f1437594d4de22 *R/site.R
 313422152d6f9859a8d7ff8838e40697 *R/utils.R
 58ab05d563065f899a6c41363392c2d8 *inst/CITATION
@@ -22,7 +22,7 @@ c739f020b488c4e42c5ee44747588ae5 *inst/resources/Rprofile
 3386b03eb558b8a042ba0d14369737f3 *inst/rstudio/templates/project/skeleton.dcf
 7d772c24d85efc15ff2078cc48a22db3 *inst/scripts/insert_image.R
 bce2512e4e18c22ce2442a286782b362 *inst/scripts/new_post.R
-8f04003a154c89bd59ed20b7cfa7e865 *inst/scripts/update_meta.R
+4c90a2efcf8afa7acd4a08dabfca4e16 *inst/scripts/update_meta.R
 8548f6a37cf80758589253099c88d18d *man/blogdown.Rd
 9a8944c9b34d3dcf64e5f8546421a1e4 *man/build_dir.Rd
 bf9b5983be35054aa6d1b4ef07a95cbc *man/build_site.Rd
@@ -45,7 +45,7 @@ a08a07b8a59acdcf5418f750a97d68c8 *man/find_yaml.Rd
 47ab19051912f58bc9d507bab2055d1d *man/install_hugo.Rd
 aa87f833b765a15e18017ecb023774b7 *man/install_theme.Rd
 67f6e4121b3ef989416bc7a2039fe477 *man/read_toml.Rd
-bda78e80e0698ed57d0e83344e6557bc *man/serve_site.Rd
+63e3eb5ea2682ba7558686bc7efbd451 *man/serve_site.Rd
 3226a255476d7e10ad716ecb342e318b *man/shortcode.Rd
 4dc3962fb22e0c7cfd1898bcd51d091c *tests/test-ci.R
 9ac60aaee0c15fb93edd2d8ce9f433be *tests/test-ci/test-themes.R
