@@ -1,4 +1,4 @@
-df1dcbf41ecde74f15da49877e478652 *DESCRIPTION
+c5b1130423cf300b6501da166d6b2546 *DESCRIPTION
 03022ec48a81511cd37a37e4268dac49 *NAMESPACE
 588bb4003b09025c07b6f99452ba186a *R/addin.R
 e7433ab98b15dd0386ab63da2cab40c3 *R/check.R
@@ -10,7 +10,7 @@ e7433ab98b15dd0386ab63da2cab40c3 *R/check.R
 cfe739a1b655a50220cb3b4c96a5c146 *R/render.R
 bf7806b8f588a4894055bdc5bc8cc7b0 *R/serve.R
 a87a195e1dde1b1d09f1437594d4de22 *R/site.R
-313422152d6f9859a8d7ff8838e40697 *R/utils.R
+ca12a47e3f68e565614330f9ec9604d4 *R/utils.R
 58ab05d563065f899a6c41363392c2d8 *inst/CITATION
 d5d6991efc8363ceb5a8b67e9f579f2a *inst/NEWS.Rd
 3d9f0f264c6cd40ae24e9e64430a2bcd *inst/resources/2020-12-01-r-rmarkdown.Rmd
@@ -41,14 +41,14 @@ e1f918c275d7fd7d086cf7313240b862 *man/filter_newfile.Rd
 a08a07b8a59acdcf5418f750a97d68c8 *man/find_yaml.Rd
 184bd2a8eaacfc0553ed6aef4dd4e582 *man/html_page.Rd
 2b75f0b697f2090a7060f4f5369370bb *man/hugo_cmd.Rd
-850dd6780588dc34a3b2d0946295d395 *man/hugo_installers.Rd
+b96e6853261d497e2c5b15185ee8ecc4 *man/hugo_installers.Rd
 47ab19051912f58bc9d507bab2055d1d *man/install_hugo.Rd
 aa87f833b765a15e18017ecb023774b7 *man/install_theme.Rd
 67f6e4121b3ef989416bc7a2039fe477 *man/read_toml.Rd
 63e3eb5ea2682ba7558686bc7efbd451 *man/serve_site.Rd
 3226a255476d7e10ad716ecb342e318b *man/shortcode.Rd
 4dc3962fb22e0c7cfd1898bcd51d091c *tests/test-ci.R
-9ac60aaee0c15fb93edd2d8ce9f433be *tests/test-ci/test-themes.R
+b7dad530d63868840eb8e6c65805dc84 *tests/test-ci/test-themes.R
 9642430eeedc8300873da966b86e8580 *tests/test-cran.R
 5a1675ab347f33355d9aec29e1c9a19f *tests/test-cran/test-addin.R
 064c2a2f02291b0ce73b32b5ad6dcf01 *tests/test-cran/test-clean.R
