@@ -64,7 +64,7 @@ install_hugo = function(
     message('The latest Hugo version is ', version)
   } else {
     if (!is.null(local_file)) version = gsub(
-      '^hugo(_extended)?_([0-9.]+)_.*', '\\2', basename(local_file)
+      '^hugo(_extended)(_withdeploy)?_([0-9.]+)_.*', '\\3', basename(local_file)
     )
   }
 
@@ -138,6 +138,14 @@ install_hugo = function(
       files = utils::untar(zipfile, list = TRUE)
       utils::untar(zipfile)
       files
+    }, pkg = {
+      if (interactive()) system2('open', shQuote(zipfile)) else {
+        if (system2('sudo', c('installer', '-pkg', zipfile, '-target', '/')) != 0) stop(
+          'The *.pkg installer requires password input. Please run this function ',
+          'in the terminal or in an interactive R session and input password.'
+        )
+      }
+      NULL
     })
   }
 
@@ -146,11 +154,13 @@ install_hugo = function(
   } else if (is_macos()) {
     download_zip(
       if (v103) 'darwin' else if (version2 >= '0.18') 'macOS' else 'MacOS',
-      if (version2 >= '0.20.3') 'tar.gz' else 'zip'
+      if (version2 >= '0.153.0') 'pkg' else if (version2 >= '0.20.3') 'tar.gz' else 'zip'
     )
   } else {
     download_zip('Linux', 'tar.gz')  # _might_ be Linux; good luck
   }
+  # can't tell if .pkg was successfully installed at this point
+  if (is.null(files)) return(invisible(NULL))
   # from a certain version of Hugo, the executable is no longer named
   # hugo_x.y.z, so exec could be NA here, but file.rename(NA_character) is fine
   exec = files[grep(sprintf('^hugo_%s.+', version), basename(files))][1]
@@ -196,9 +206,10 @@ install_hugo_bin = function(exec, version) {
 #' @param version A version number. The default is to automatically detect the
 #'   latest version. Versions before v0.17 are not supported.
 #' @return A data frame containing columns \code{os} (operating system),
-#'   \code{arch} (architecture), and \code{extended} (extended version or not).
-#'   If your R version is lower than 4.1.0, a character vector of the installer
-#'   filenames will be returned instead.
+#'   \code{arch} (architecture), \code{extended} (extended version or not),
+#'   \code{withdeploy} (with the deploy feature or not). If your R version is
+#'   lower than 4.1.0, a character vector of the installer filenames will be
+#'   returned instead.
 #' @export
 #' @examplesIf interactive()
 #' blogdown::hugo_installers()
@@ -206,7 +217,7 @@ install_hugo_bin = function(exec, version) {
 #' blogdown::hugo_installers('0.17')
 hugo_installers = function(version = 'latest') {
   repo = 'gohugoio/hugo'
-  if (version == 'latest') version = xfun::github_releases(repo, 'latest')
+  if (version == 'latest') version = xfun::github_releases(repo, 'latest')[1]
   version = sub('^[vV]?', 'v', version)
   json = xfun::loadable('jsonlite')
   res = xfun::github_api(sprintf('/repos/%s/releases/tags/%s', repo, version), raw = !json)
@@ -216,19 +227,20 @@ hugo_installers = function(version = 'latest') {
     res = strsplit(res, '"browser_download_url":"')
     xfun::grep_sub('^(https://[^"]+)".*', '\\1', unlist(res))
   }
-  res = grep('[.](zip|tar[.]gz)$', unlist(res), value = TRUE)
+  res = grep('[.](zip|tar[.]gz|pkg)$', unlist(res), value = TRUE)
   res = basename(res)
   if (!'gregexec' %in% ls(baseenv())) {
     warning('Your R version is too low (< 4.1.0) and does not have gregexec().')
     return(res)
     gregexec = regexec  # a hack to pass R CMD check without NOTE
   }
-  m = gregexec('^hugo_(extended_)?([^_]+)_([^-]+)-([^.]+)[.](zip|tar[.]gz)$', res)
-  res = lapply(regmatches(res, m), function(x) if (length(x) >= 6) x[c(1, 3, 4, 5, 2)])
+  m = gregexec('^hugo_(extended_)?(withdeploy_)?([^_]+)_([^-]+)-([^.]+)[.]([a-z.]+)$', res)
+  res = lapply(regmatches(res, m), function(x) if (length(x) >= 6) x[c(1, 4, 5, 6, 2, 3)])
   res = do.call(rbind, res)
-  colnames(res) = c('installer', 'version', 'os', 'arch', 'extended')
+  colnames(res) = c('installer', 'version', 'os', 'arch', 'extended', 'withdeploy')
   res = as.data.frame(res)
   res$extended = res$extended == 'extended_'
+  res$withdeploy = res$withdeploy == 'withdeploy_'
   rownames(res) = res$installer
   res = res[, -1]
   res

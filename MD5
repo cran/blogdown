@@ -1,11 +1,11 @@
-c5b1130423cf300b6501da166d6b2546 *DESCRIPTION
+1b3244df43aea658885c7d0e19ee9643 *DESCRIPTION
 03022ec48a81511cd37a37e4268dac49 *NAMESPACE
 588bb4003b09025c07b6f99452ba186a *R/addin.R
 e7433ab98b15dd0386ab63da2cab40c3 *R/check.R
 25596acfa57a35f798e765268ec46535 *R/clean.R
 6e8d628a198b83d49e31a0bceb9ad850 *R/format.R
 500a4773c3a89c3fa9df95d5926e1074 *R/hugo.R
-30bba4f401499fbcbfed9a48ba0dc43a *R/install.R
+617961f98d5401a06d6a99fa3b3895ff *R/install.R
 422f259d44cb52c396fae3975f38dec1 *R/package.R
 cfe739a1b655a50220cb3b4c96a5c146 *R/render.R
 bf7806b8f588a4894055bdc5bc8cc7b0 *R/serve.R
@@ -41,7 +41,7 @@ e1f918c275d7fd7d086cf7313240b862 *man/filter_newfile.Rd
 a08a07b8a59acdcf5418f750a97d68c8 *man/find_yaml.Rd
 184bd2a8eaacfc0553ed6aef4dd4e582 *man/html_page.Rd
 2b75f0b697f2090a7060f4f5369370bb *man/hugo_cmd.Rd
-b96e6853261d497e2c5b15185ee8ecc4 *man/hugo_installers.Rd
+a45e62e0c94c1a3648ac07eb994e7bf4 *man/hugo_installers.Rd
 47ab19051912f58bc9d507bab2055d1d *man/install_hugo.Rd
 aa87f833b765a15e18017ecb023774b7 *man/install_theme.Rd
 67f6e4121b3ef989416bc7a2039fe477 *man/read_toml.Rd
